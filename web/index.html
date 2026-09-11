@@ -92,11 +92,11 @@
             <div class="manual-product-grid">
               <label>Nom de l'article<input id="productTitleManual" type="text" placeholder="Ex. iPhone 14 Pro Max 512 Go" /></label>
             </div>
-            <div class="mini-grid four metric-grid">
-              <label>Poids kg<input id="weightKg" type="number" step="0.01" min="0.01" /></label>
-              <label>L cm<input id="lengthCm" type="number" step="0.1" min="0.1" /></label>
-              <label>l cm<input id="widthCm" type="number" step="0.1" min="0.1" /></label>
-              <label>H cm<input id="heightCm" type="number" step="0.1" min="0.1" /></label>
+            <div class="mini-grid four imperial-grid">
+              <label>Poids lb <span class="unit-secondary" id="manualWeightMetric">(— kg)</span><input id="manualWeightLb" type="number" step="0.01" min="0.01" /></label>
+              <label>L in <span class="unit-secondary" id="manualLengthMetric">(— cm)</span><input id="manualLengthIn" type="number" step="0.1" min="0.1" /></label>
+              <label>l in <span class="unit-secondary" id="manualWidthMetric">(— cm)</span><input id="manualWidthIn" type="number" step="0.1" min="0.1" /></label>
+              <label>H in <span class="unit-secondary" id="manualHeightMetric">(— cm)</span><input id="manualHeightIn" type="number" step="0.1" min="0.1" /></label>
             </div>
             <button class="secondary manual-shipping-action" id="manualShipping" type="button"><svg class="icon sm"><use href="#i-refresh"/></svg>Calculer le transport</button>
             <div class="detail-list compact-details">
