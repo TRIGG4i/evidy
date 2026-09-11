@@ -1,0 +1,15 @@
+{
+  "name": "evidy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "eVidy US — calculateur de devis pour achats assistés USA → Madagascar",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/server.mjs",
+    "dev": "EVIDY_DEV=1 node --watch server/server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "sync:rates": "node scripts/sync-rates.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  }
+}
