@@ -87,11 +87,21 @@
         <div class="inline-status"><span class="status-dot" id="statusDot"></span><span id="rateStatus">Initialisation…</span></div>
 
         <details class="disclosure" id="productDisclosure">
-          <summary><span>Détails du produit</span><svg class="icon sm"><use href="#i-chevron"/></svg></summary>
+          <summary><span>Détails / saisie manuelle</span><svg class="icon sm"><use href="#i-chevron"/></svg></summary>
           <div class="disc-body">
-            <div class="detail-list">
-              <div class="detail-row"><span>Article</span><strong id="clientProductTitle">À renseigner</strong></div>
-              <div class="detail-row"><span>Colis estimé</span><strong id="clientPackageMeta">—</strong></div>
+            <div class="manual-product-grid">
+              <label>Nom de l'article<input id="productTitleManual" type="text" placeholder="Ex. iPhone 14 Pro Max 512 Go" /></label>
+            </div>
+            <div class="mini-grid four metric-grid">
+              <label>Poids kg<input id="weightKg" type="number" step="0.01" min="0.01" /></label>
+              <label>L cm<input id="lengthCm" type="number" step="0.1" min="0.1" /></label>
+              <label>l cm<input id="widthCm" type="number" step="0.1" min="0.1" /></label>
+              <label>H cm<input id="heightCm" type="number" step="0.1" min="0.1" /></label>
+            </div>
+            <button class="secondary manual-shipping-action" id="manualShipping" type="button"><svg class="icon sm"><use href="#i-refresh"/></svg>Calculer le transport</button>
+            <div class="detail-list compact-details">
+              <div class="detail-row"><span>Colis</span><strong id="clientPackageMeta">—</strong></div>
+              <div class="detail-row"><span>Poids facturable</span><strong id="clientBillableMetric">—</strong></div>
             </div>
           </div>
         </details>
