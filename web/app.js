@@ -77,18 +77,92 @@ async function loadConfig() {
   } catch {}
 }
 
+const VISA_DOMAINS = ['https://usa.visa.com','https://www.visa.fr','https://www.visa.ca','https://www.visa.com.au','https://www.visa.com.sg'];
+const VISA_PROXIES = ['https://api.allorigins.win/raw?url=','https://corsproxy.io/?url='];
+
+function visaDate(date = new Date()) {
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${mm}/${dd}/${date.getFullYear()}`;
+}
+
+function visaUrl(domain, fromCurrency = 'USD') {
+  const params = new URLSearchParams({ amount:'1', fee:'4', utcConvertedDate:visaDate(), exchangedate:visaDate(), fromCurr:fromCurrency, toCurr:'MGA', _:String(Date.now()) });
+  return `${domain}/cmsapi/fx/rates?${params}`;
+}
+
+function visaNumber(value) {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return NaN;
+  return Number(value.replace(/[^0-9,.-]/g, '').replace(/,/g, ''));
+}
+
+function extractVisaRate(json) {
+  const candidates = [];
+  const push = (path, value, priority) => {
+    const n = visaNumber(value);
+    if (Number.isFinite(n) && n >= 1000 && n <= 20000) candidates.push({ path, value:n, priority });
+  };
+  const scan = (obj, path = '') => {
+    if (!obj || typeof obj !== 'object') return;
+    Object.entries(obj).forEach(([key, value]) => {
+      const p = path ? `${path}.${key}` : key;
+      const k = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (value && typeof value === 'object') return scan(value, p);
+      if (/withadditionalfee|withmarkup|totalconverted|convertedamount|convertedamt|destinationamount|destamount|toamount|amountconverted/.test(k)) push(p,value,1);
+      else if (/totalconversionrate|conversionratewithadditionalfee|exchangeratewithadditionalfee|fxratewithadditionalfee|ratewithadditionalfee/.test(k)) push(p,value,2);
+      else if (k === 'rate' || /conversionrate|exchangerate|fxrate/.test(k)) push(p,value,3);
+      else push(p,value,4);
+    });
+  };
+  scan(json);
+  if (!candidates.length) throw new Error('Taux VISA introuvable dans la réponse.');
+  const best = Math.min(...candidates.map(c => c.priority));
+  return candidates.filter(c => c.priority === best).sort((a,b) => b.value-a.value)[0].value;
+}
+
+async function fetchVisaJson(url) {
+  const attempts = [url, ...VISA_PROXIES.map(p => p + encodeURIComponent(url))];
+  let last;
+  for (const target of attempts) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+      const response = await fetch(target, { cache:'no-store', signal:controller.signal, headers:{ 'Accept':'application/json, text/plain, */*' } });
+      clearTimeout(timer);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return JSON.parse(await response.text());
+    } catch (e) { last = e; }
+  }
+  throw last || new Error('VISA indisponible');
+}
+
 async function refreshVisa() {
   $('visaBtn').disabled = true;
-  setHint('visaStatus', 'Récupération du taux VISA avec Bank fee 4 %…');
+  setHint('visaStatus', 'Récupération VISA : USD → MGA, Bank fee 4 %…');
+  const errors = [];
   try {
-    const data = await fetchJson(api('/api/visa-rate?from=USD&bankFee=4'), {}, 15000);
-    $('visaRate').value = Number(data.rate).toFixed(2);
-    setHint('visaStatus', data.source === 'visa' ? `Taux VISA chargé : ${Number(data.rate).toFixed(2)} MGA/USD.` : `Taux de secours chargé : ${Number(data.rate).toFixed(2)} MGA/USD.`, data.source === 'visa' ? 'success' : 'warn');
+    for (const domain of VISA_DOMAINS) {
+      try {
+        const json = await fetchVisaJson(visaUrl(domain, 'USD'));
+        const rate = extractVisaRate(json);
+        $('visaRate').value = Number(rate).toFixed(2);
+        setHint('visaStatus', `Taux VISA chargé : ${Number(rate).toFixed(2)} MGA/USD • Bank fee 4 %.`, 'success');
+        saveState();
+        return;
+      } catch (e) { errors.push(`${domain}: ${e.message}`); }
+    }
+    try {
+      const data = await fetchJson(api('/api/visa-rate?from=USD&bankFee=4'), {}, 15000);
+      $('visaRate').value = Number(data.rate).toFixed(2);
+      setHint('visaStatus', `Taux VISA chargé via le backend : ${Number(data.rate).toFixed(2)} MGA/USD.`, 'success');
+      saveState();
+      return;
+    } catch (e) { errors.push(`backend: ${e.message}`); }
+    throw new Error(errors.at(-1) || 'VISA indisponible');
   } catch (error) {
-    setHint('visaStatus', `Visa n'est pas accessible automatiquement : saisissez le taux VISA du jour. (${error.message})`, 'warn');
-  } finally {
-    $('visaBtn').disabled = false; saveState();
-  }
+    setHint('visaStatus', `Auto VISA indisponible ici : saisissez le taux du jour. (${error.message})`, 'warn');
+  } finally { $('visaBtn').disabled = false; }
 }
 
 async function analyzeProduct() {
