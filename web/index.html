@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1220">
+  <meta name="description" content="eVidy US — calculez un devis tout compris pour vos achats aux États-Unis vers Madagascar.">
+  <title>eVidy US — Calculateur de devis</title>
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <img class="brand" src="assets/logo.svg" alt="eVidy">
+      <div class="brand-service">US <span>•</span> Madagascar</div>
+    </div>
+  </header>
+
+  <main class="wrap page">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">ACHAT ASSISTÉ AUX ÉTATS-UNIS</p>
+        <h1>Un prix clair, jusqu’à Madagascar.</h1>
+        <p class="lede">Collez le lien du produit. eVidy estime le colis, interroge le tarif public Planet Express et calcule un devis tout compris.</p>
+      </div>
+      <div class="hero-badge"><strong id="apiDot">●</strong><span id="apiStatus">Connexion au moteur…</span></div>
+    </section>
+
+    <section class="panel link-panel">
+      <label for="productUrl">Lien du produit</label>
+      <div class="url-row">
+        <input id="productUrl" type="url" inputmode="url" placeholder="https://www.ebay.com/itm/…" autocomplete="off">
+        <button id="analyzeBtn" class="primary">Analyser</button>
+      </div>
+      <div id="analysisStatus" class="hint">eBay US fonctionne en priorité. Les champs restent modifiables après analyse.</div>
+    </section>
+
+    <section class="workspace">
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-title-row"><h2>Produit</h2><span id="confidenceBadge" class="pill muted">Saisie manuelle</span></div>
+          <div class="field-grid two">
+            <div class="field wide"><label for="productTitle">Article</label><input id="productTitle" type="text" placeholder="Ex. iPhone 14 Pro Max 512 Go"></div>
+            <div class="field"><label for="itemUsd">Prix article (USD)</label><input id="itemUsd" type="number" min="0" step="0.01" value="551.99"></div>
+            <div class="field"><label for="domesticUsd">Livraison vendeur US</label><input id="domesticUsd" type="number" min="0" step="0.01" value="0"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title-row"><h2>Colis estimé</h2><button id="toggleAdvanced" class="text-btn" type="button">Détails</button></div>
+          <div class="package-summary">
+            <div><span>Poids</span><strong id="weightSummary">2.50 lb</strong></div>
+            <div><span>Dimensions</span><strong id="dimsSummary">11 × 9 × 4 in</strong></div>
+            <div><span>Poids facturable</span><strong id="billableSummary">3 lb</strong></div>
+          </div>
+          <div id="advanced" class="advanced" hidden>
+            <div class="field-grid four">
+              <div class="field"><label for="weightLb">Poids lb</label><input id="weightLb" type="number" min="0.01" step="0.01" value="2.5"></div>
+              <div class="field"><label for="lengthIn">L</label><input id="lengthIn" type="number" min="0.01" step="0.1" value="11"></div>
+              <div class="field"><label for="widthIn">l</label><input id="widthIn" type="number" min="0.01" step="0.1" value="9"></div>
+              <div class="field"><label for="heightIn">H</label><input id="heightIn" type="number" min="0.01" step="0.1" value="4"></div>
+            </div>
+            <p class="hint">Le moteur utilise le plus élevé entre poids réel et poids volumétrique Planet Express. L’estimation reste prudente tant que le colis n’est pas reçu.</p>
+          </div>
+          <div class="field-grid two compact-top">
+            <div class="field"><label for="warehouse">Entrepôt Planet Express</label><select id="warehouse"><option value="4">Tualatin, Oregon</option><option value="6">Torrance, Californie</option></select></div>
+            <div class="field"><label for="declaredValue">Valeur justificative (USD)</label><input id="declaredValue" type="number" min="0" step="0.01" value="551.99"></div>
+          </div>
+          <button id="ratesBtn" class="secondary full" type="button">Obtenir les tarifs Planet Express</button>
+          <div id="rates" class="rates"><div class="empty">Aucun tarif chargé.</div></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title-row"><h2>Paramètres du devis</h2><span class="pill">Interne</span></div>
+          <div class="field-grid two">
+            <div class="field"><label for="visaRate">Taux VISA USD → MGA</label><input id="visaRate" type="number" min="1000" step="0.01" placeholder="À actualiser"></div>
+            <div class="field action-field"><label>&nbsp;</label><button id="visaBtn" class="secondary" type="button">Actualiser VISA</button></div>
+            <div class="field"><label for="customsReserve">Réserve arrivée / douane (Ar)</label><input id="customsReserve" type="number" min="0" step="1000" value="200000"></div>
+            <div class="field"><label for="localDelivery">Livraison client Madagascar (Ar)</label><input id="localDelivery" type="number" min="0" step="1000" value="0"></div>
+            <div class="field"><label for="peFeesUsd">Frais Planet Express annexes (USD)</label><input id="peFeesUsd" type="number" min="0" step="0.01" value="5"></div>
+            <div class="field"><label for="manualShippingUsd">Transport manuel (USD)</label><input id="manualShippingUsd" type="number" min="0" step="0.01" placeholder="Sinon tarif sélectionné"></div>
+          </div>
+          <div id="visaStatus" class="hint">Le taux VISA est chargé avec Bank fee 4 %. Si Visa bloque l’accès, saisissez le taux affiché par le calculateur Visa.</div>
+        </section>
+      </div>
+
+      <aside class="quote-card panel">
+        <p class="eyebrow dark">DEVIS eVIDY US</p>
+        <div class="total-label">Prix tout compris estimé</div>
+        <div id="grandTotal" class="grand-total">—</div>
+        <div id="tierLabel" class="tier-label">Commission : —</div>
+        <div class="divider"></div>
+        <div class="breakdown" id="breakdown">
+          <div><span>Achat + livraison US</span><strong>—</strong></div>
+          <div><span>Transport international</span><strong>—</strong></div>
+          <div><span>Frais carte</span><strong>—</strong></div>
+          <div><span>Réserve arrivée</span><strong>—</strong></div>
+          <div><span>Livraison locale</span><strong>—</strong></div>
+          <div class="service-line"><span>Service eVidy</span><strong>—</strong></div>
+        </div>
+        <button id="calculateBtn" class="primary full big" type="button">Calculer le devis</button>
+        <button id="copyBtn" class="secondary full" type="button" disabled>Copier le devis</button>
+        <p class="quote-note">Estimation interne avant réception réelle du colis. Le tarif transport affiché provient du calculateur public Planet Express.</p>
+      </aside>
+    </section>
+
+    <section class="trust-grid">
+      <div><strong>Tarif public Planet Express</strong><span>DHL/FedEx récupérés depuis leur calculateur.</span></div>
+      <div><strong>Taux VISA</strong><span>Même logique que le calculateur E‑Pay MG.</span></div>
+      <div><strong>Marge de sécurité</strong><span>Réserve arrivée séparée du bénéfice eVidy.</span></div>
+    </section>
+  </main>
+
+  <footer><div class="wrap">eVidy US • Vos achats aux États-Unis, simplement. <span>Service opéré par PREST OFFICE.</span></div></footer>
+  <script src="config.js"></script>
+  <script src="app.js" type="module"></script>
+</body>
+</html>
