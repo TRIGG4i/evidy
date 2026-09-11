@@ -55,7 +55,7 @@ export const getVisaRate = async ({ from = 'USD', to = 'MGA', bankFee = CONFIG.v
   for (const domain of VISA_DOMAINS) {
     const params = new URLSearchParams({
       amount: '1', fee: String(bankFee), utcConvertedDate: date, exchangedate: date,
-      fromCurr: currency, toCurr: 'MGA', _: String(Date.now())
+      fromCurr: 'MGA', toCurr: currency, _: String(Date.now())
     });
     try {
       const controller = new AbortController();
