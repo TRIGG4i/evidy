@@ -128,12 +128,11 @@ async function analyzeProduct(){
     const data=await fetchJSON(`${CONFIG.apiBase}/api/analyze`,{method:"POST",body:JSON.stringify({url:state.product.url})},22000);
     if(data.title)state.product.title=data.title.replace(/\s*\|\s*eBay.*$/i,"");
     const indexedPrice=Number(data.priceUsd);
-    if(indexedPrice>0 && data.priceReliability==="direct") state.product.itemUsd=indexedPrice;
-    else if(indexedPrice>0 && !(state.product.itemUsd>0)) state.product.itemUsd=indexedPrice;
+    if(indexedPrice>0) state.product.itemUsd=indexedPrice;
     if(data.packageEstimate){const p=data.packageEstimate;state.package={weight:Number(p.weightLb)||state.package.weight,length:Number(p.dimensionsIn?.length)||state.package.length,width:Number(p.dimensionsIn?.width)||state.package.width,height:Number(p.dimensionsIn?.height)||state.package.height,source:p.source||"estimé",confidence:Number(p.confidence)||0}}
     syncInputs();
     if(data.priceReliability==="indexed-verify"){
-      $("rateStatus").textContent=`Produit reconnu automatiquement · prix indexé ${indexedPrice>0?fmtUSD(indexedPrice):"—"} à vérifier sur eBay · prix saisi conservé`;
+      $("rateStatus").textContent=indexedPrice>0?`Produit reconnu · prix auto ${fmtUSD(indexedPrice)} · modifiable manuellement`:`Produit reconnu · prix non détecté, saisis-le manuellement`;
       $("statusDot").className="status-dot warn";
       $("productDisclosure").open=true;
     }else{
