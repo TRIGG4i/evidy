@@ -7,6 +7,7 @@ import { getPlanetExpressRates } from './lib/planetexpress.mjs';
 import { getVisaRate } from './lib/visa.mjs';
 import { analyzeProductUrl } from './lib/product-analyzer.mjs';
 import { quote } from './lib/quote-engine.mjs';
+import { estimateConsolidation } from './lib/consolidation-model.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(here, '../web');
@@ -114,6 +115,35 @@ const server = http.createServer(async (req, res) => {
       if (!body.url) throw Object.assign(new Error('Lien produit requis'), { status: 400 });
       const result = await analyzeProductUrl(body.url);
       json(res, 200, result, headers); return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/consolidation-rates') {
+      const body = await readBody(req);
+      const estimate = estimateConsolidation(body.packages || []);
+      const pkg = estimate.quote;
+      const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 18000);
+      try {
+        const rates = await getPlanetExpressRates({
+          warehouseId: body.warehouseId || '4', city: 'Antananarivo', postalcode: '101',
+          weight: pkg.weight, length: pkg.length, width: pkg.width, height: pkg.height,
+          value: Number(body.value || 0), signal: controller.signal
+        });
+        const carriers = rates.carriers.filter(c => ['DHL','FedEx'].includes(c.carrier));
+        const hasBattery = Boolean(body.hasBattery || estimate.hasBattery);
+        const largeBattery = Boolean(body.largeBattery || estimate.largeBattery);
+        const fedex = carriers.filter(c => c.carrier === 'FedEx').sort((a,b)=>a.rateUsd-b.rateUsd)[0] || null;
+        const cheapest = carriers.slice().sort((a,b)=>a.rateUsd-b.rateUsd)[0] || null;
+        const warnings = [];
+        if (largeBattery) warnings.push('LARGE_BATTERY_REVIEW');
+        else if (hasBattery) warnings.push('BATTERY_REVIEW');
+        if (!carriers.length) warnings.push('NO_ELIGIBLE_CARRIER');
+        else if (new Set(carriers.map(c=>c.carrier)).size === 1) warnings.push('LIMITED_CARRIER_OPTIONS');
+        json(res, 200, {
+          estimate, carriers, preferredCarrier: hasBattery && fedex ? 'FedEx' : cheapest?.carrier || null,
+          consolidationFeeUsd: 8, warnings,
+          routeCheck: { live: true, billableWeightLb: rates.billableWeightLb, eligibleCarriers: [...new Set(carriers.map(c=>c.carrier))] }
+        }, headers);
+      } finally { clearTimeout(timer); }
+      return;
     }
     if (req.method === 'POST' && (url.pathname === '/api/shipping-rates' || url.pathname === '/api/planetexpress')) {
       const body = await readBody(req);

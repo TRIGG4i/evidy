@@ -242,6 +242,26 @@ const fetchEbaySearchIndex = async (itemId) => {
   return null;
 };
 
+export const fetchProductSpecIndex = async (title) => {
+  const clean = String(title || '').replace(/\s+/g, ' ').replace(/\([^)]*\)/g, ' ').trim().slice(0, 120);
+  if (clean.length < 8) return null;
+  const queries = [`"${clean}" weight dimensions`, `${clean} specs weight dimensions`];
+  const searchOne = async (query) => {
+    try {
+      const searchUrl = `https://search.brave.com/search?q=${encodeURIComponent(query)}&source=web`;
+      const { stdout } = await execFileAsync('/usr/bin/curl', [
+        '-fsSL','--max-time','8','-A','Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36','-H','Accept-Language: en-US,en;q=0.9',searchUrl
+      ], { maxBuffer: 2_000_000 });
+      const plain = stripTags(String(stdout).slice(0,1_500_000));
+      const physical = extractPhysical(plain);
+      if (physical.weightLb || physical.dimensionsIn) return { physical, text: plain.slice(0,12000), source:'spec-index' };
+    } catch {}
+    return null;
+  };
+  const candidates = await Promise.all(queries.map(searchOne));
+  return candidates.find(Boolean) || null;
+};
+
 const firstNumber = (text) => {
   const m = String(text || '').replace(/,/g, '').match(/(\d+(?:\.\d+)?)/);
   return m ? Number(m[1]) : null;
@@ -282,7 +302,8 @@ const extractPhysical = (text) => {
 
   const weightPatterns = [
     { kind: 'package', re: /(?:package|shipping)\s*weight[^0-9]{0,30}([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b(?:\s*\+\s*([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b)?/i },
-    { kind: 'item', re: /(?:net|item|product)?\s*weight[^0-9]{0,30}([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b(?:\s*\+\s*([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b)?/i }
+    { kind: 'item', re: /(?:net|item|product)?\s*weight[^0-9]{0,30}([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b(?:\s*\+\s*([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b)?/i },
+    { kind: 'item', re: /([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b(?:\s*[+±]\s*([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b)?[^0-9]{0,35}(?:net\s*)?weight\b/i }
   ];
   for (const { kind, re } of weightPatterns) {
     const m = plain.match(re); if (!m) continue;
@@ -298,7 +319,8 @@ const extractPhysical = (text) => {
   let dimensionsIn = null, dimensionsKind = null;
   const dimPatterns = [
     { kind: 'package', re: /(?:package|shipping)\s*dimensions?[^0-9]{0,45}([0-9.]+)\s*(mm|cm|in|inch|inches)?\s*[x×]\s*([0-9.]+)\s*(mm|cm|in|inch|inches)?\s*[x×]\s*([0-9.]+)\s*(mm|cm|in|inch|inches)?\b/i },
-    { kind: 'item', re: /(?:product|item|overall)?\s*dimensions?[^0-9]{0,45}([0-9.]+)\s*(mm|cm|in|inch|inches)?\s*[x×]\s*([0-9.]+)\s*(mm|cm|in|inch|inches)?\s*[x×]\s*([0-9.]+)\s*(mm|cm|in|inch|inches)?\b/i }
+    { kind: 'item', re: /(?:product|item|overall)?\s*dimensions?[^0-9]{0,45}([0-9.]+)\s*(mm|cm|in|inch|inches)?\s*[x×*]\s*([0-9.]+)\s*(mm|cm|in|inch|inches)?\s*[x×*]\s*([0-9.]+)\s*(mm|cm|in|inch|inches)?\b/i },
+    { kind: 'item', re: /([0-9.]+)\s*(mm|cm|in|inch|inches)?\s*[x×*]\s*([0-9.]+)\s*(mm|cm|in|inch|inches)?\s*[x×*]\s*([0-9.]+)\s*(mm|cm|in|inch|inches)?[^0-9]{0,35}dimensions?\b/i }
   ];
   for (const { kind, re } of dimPatterns) {
     const m = plain.match(re); if (!m) continue;
@@ -316,6 +338,15 @@ const extractPhysical = (text) => {
 };
 
 export const parsePhysicalSpecs = extractPhysical;
+
+export const detectShippingFlags = (title, description='') => {
+  const text = `${title || ''} ${description || ''}`;
+  const battery = /\b(battery|batteries|lithium|li-ion|lifepo4|power\s*station|power\s*bank|portable\s*power)\b/i.test(text);
+  const whMatches = [...text.matchAll(/\b([0-9]{2,5}(?:\.[0-9]+)?)\s*W\s*h\b/ig)].map(m=>Number(m[1])).filter(Number.isFinite);
+  const batteryWh = whMatches.length ? Math.max(...whMatches) : null;
+  const largeBattery = battery && Number.isFinite(batteryWh) && batteryWh >= 100;
+  return { battery, batteryWh, largeBattery };
+};
 
 const HEURISTICS = [
   { category: 'earbuds', re: /airpods|earbuds|earphones|wireless buds/i, weight: 1.5, dims: [8, 6, 4] },
@@ -428,6 +459,13 @@ export const analyzeProductUrl = async (rawUrl) => {
     warning = 'Amazon a été reconnu, mais le prix ou la livraison n’est pas visible depuis le serveur. Vérifie ou complète le prix manuellement.';
   }
 
+  let specIndex = null;
+  if (title && (!physical.weightLb || !physical.dimensionsIn)) {
+    specIndex = await fetchProductSpecIndex(title);
+    if (specIndex?.physical?.weightLb && !physical.weightLb) { physical.weightLb = specIndex.physical.weightLb; physical.weightKind = specIndex.physical.weightKind || 'item'; }
+    if (specIndex?.physical?.dimensionsIn && !physical.dimensionsIn) { physical.dimensionsIn = specIndex.physical.dimensionsIn; physical.dimensionsKind = specIndex.physical.dimensionsKind || 'item'; }
+  }
+
   let estimate;
   const physicalVolume = physical.dimensionsIn ? physical.dimensionsIn.length * physical.dimensionsIn.width * physical.dimensionsIn.height : 0;
   const implausiblyTinyPackage = physicalVolume > 0 && physicalVolume < 20;
@@ -465,6 +503,8 @@ export const analyzeProductUrl = async (rawUrl) => {
     priceReliability: Number.isFinite(priceUsd) && priceUsd > 0 ? (source === 'page' ? 'direct' : 'indexed-verify') : 'unknown',
     extracted: physical,
     packageEstimate: estimate,
+    specSource: specIndex?.source || null,
+    shippingFlags: detectShippingFlags(title, `${description} ${specIndex?.text || ''}`),
     analyzedAt: new Date().toISOString()
   };
 };

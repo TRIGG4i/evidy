@@ -28,13 +28,15 @@ const state={
   visaRate:Number(saved.visaRate)||CONFIG.fallbackVisaRate,
   ratesDate:saved.ratesDate||null,
   product:{url:saved.product?.url||"",title:saved.product?.title||"",itemUsd:Number(saved.product?.itemUsd)||551.99,domesticUsd:Number(saved.product?.domesticUsd)||0},
-  package:{weight:Number(saved.package?.weight)||2.5,length:Number(saved.package?.length)||11,width:Number(saved.package?.width)||9,height:Number(saved.package?.height)||4,source:saved.package?.source||"manuel",confidence:Number(saved.package?.confidence)||0},
+  package:{weight:Number(saved.package?.weight)||2.5,length:Number(saved.package?.length)||11,width:Number(saved.package?.width)||9,height:Number(saved.package?.height)||4,source:saved.package?.source||"manuel",confidence:Number(saved.package?.confidence)||0,battery:Boolean(saved.package?.battery),batteryWh:Number(saved.package?.batteryWh)||null,largeBattery:Boolean(saved.package?.largeBattery)},
   unitSystem:saved.unitSystem==="metric"?"metric":"us",
   shippingMode:saved.shippingMode==="consolidation"?"consolidation":"single",
-  consolidationPackages:Array.isArray(saved.consolidationPackages)?saved.consolidationPackages.map(p=>({weight:Number(p.weight)||0,length:Number(p.length)||0,width:Number(p.width)||0,height:Number(p.height)||0})):[],
+  consolidationPackages:Array.isArray(saved.consolidationPackages)?saved.consolidationPackages.map(p=>({weight:Number(p.weight)||0,length:Number(p.length)||0,width:Number(p.width)||0,height:Number(p.height)||0,battery:Boolean(p.battery)})):[],
+  consolidatedEstimate:null,
   warehouse:String(saved.warehouse||"4"),
   customsReserve:Number(saved.customsReserve)||200000,
   peFeesUsd:Number(saved.peFeesUsd)||CONFIG.peDefaultFeeUSD,
+  consolidationFeeUsd:Number.isFinite(Number(saved.consolidationFeeUsd))?Number(saved.consolidationFeeUsd):8,
   localDelivery:Number(saved.localDelivery)||0,
   shippingRates:[],selectedRate:null,selectedCarrier:saved.selectedCarrier||"DHL",
   quotes:(()=>{try{return JSON.parse(localStorage.getItem("evidyQuotesV1")||"[]")}catch{return []}})(),
@@ -42,7 +44,7 @@ const state={
 };
 
 function persistState(){
-  try{localStorage.setItem("evidyStateV1",JSON.stringify({visaRate:state.visaRate,ratesDate:state.ratesDate,product:state.product,package:state.package,unitSystem:state.unitSystem,shippingMode:state.shippingMode,consolidationPackages:state.consolidationPackages,warehouse:state.warehouse,customsReserve:state.customsReserve,peFeesUsd:state.peFeesUsd,localDelivery:state.localDelivery,selectedCarrier:state.selectedCarrier}))}catch{}
+  try{localStorage.setItem("evidyStateV1",JSON.stringify({visaRate:state.visaRate,ratesDate:state.ratesDate,product:state.product,package:state.package,unitSystem:state.unitSystem,shippingMode:state.shippingMode,consolidationPackages:state.consolidationPackages,warehouse:state.warehouse,customsReserve:state.customsReserve,peFeesUsd:state.peFeesUsd,consolidationFeeUsd:state.consolidationFeeUsd,localDelivery:state.localDelivery,selectedCarrier:state.selectedCarrier}))}catch{}
 }
 function serviceRate(itemUsd){return itemUsd<=350?.30:itemUsd<=900?.25:.15}
 function serviceFeeMGA(itemUsd,domesticUsd,rate){
@@ -55,9 +57,9 @@ function cardFeeMGA(base){return Math.round(base*CONFIG.cardFeePercent/100+CONFI
 function packageComplete(p){return p&&[p.weight,p.length,p.width,p.height].every(v=>Number(v)>0)}
 function ensureConsolidationPackages(){
   if(!Array.isArray(state.consolidationPackages))state.consolidationPackages=[];
-  if(!state.consolidationPackages.length)state.consolidationPackages=[{...state.package},{weight:0,length:0,width:0,height:0}];
+  if(!state.consolidationPackages.length)state.consolidationPackages=[{...state.package},{weight:0,length:0,width:0,height:0,battery:false}];
   else state.consolidationPackages[0]={...state.package};
-  while(state.consolidationPackages.length<2)state.consolidationPackages.push({weight:0,length:0,width:0,height:0});
+  while(state.consolidationPackages.length<2)state.consolidationPackages.push({weight:0,length:0,width:0,height:0,battery:false});
 }
 function estimateConsolidatedPackage(){
   if(state.shippingMode!=="consolidation")return state.package;
@@ -71,26 +73,27 @@ function estimateConsolidatedPackage(){
   const rawWeight=packages.reduce((sum,p)=>sum+Number(p.weight),0);
   return{weight:rawWeight*1.06+0.5,length:innerL+1,width:innerW+1,height:innerH+1,source:"consolidation-estimate",confidence:.62,count:packages.length};
 }
-function activeShippingPackage(){return state.shippingMode==="consolidation"?(estimateConsolidatedPackage()||null):state.package}
+function activeShippingPackage(){return state.shippingMode==="consolidation"?(state.consolidatedEstimate||estimateConsolidatedPackage()||null):state.package}
 function billableWeight(){const p=activeShippingPackage();return p?Math.ceil(Math.max(p.weight,p.length*p.width*p.height/166)):0}
 function bestRateForCarrier(carrier){return state.shippingRates.filter(r=>r.carrier===carrier).sort((a,b)=>a.rateUsd-b.rateUsd)[0]||null}
 function selectedShipping(){return state.selectedRate||bestRateForCarrier(state.selectedCarrier)}
 function calculate(){
   const item=state.product.itemUsd,domestic=state.product.domesticUsd,rate=state.visaRate,ship=selectedShipping();
   if(!(item>0&&rate>0&&ship?.rateUsd>0))return null;
-  const purchaseMga=(item+domestic)*rate,freightMga=(ship.rateUsd+state.peFeesUsd)*rate;
+  const consolidationFee=state.shippingMode==="consolidation"?state.consolidationFeeUsd:0;
+  const purchaseMga=(item+domestic)*rate,freightMga=(ship.rateUsd+state.peFeesUsd+consolidationFee)*rate;
   const cardPurchase=cardFeeMGA(purchaseMga),cardFreight=cardFeeMGA(freightMga),service=serviceFeeMGA(item,domestic,rate);
   const cost=purchaseMga+freightMga+cardPurchase+cardFreight+state.customsReserve+state.localDelivery;
   const total=roundUpTo(cost+service,1000),profit=total-cost;
-  return{itemUsd:item,domesticUsd:domestic,visaRate:rate,shipping:ship,peFeesUsd:state.peFeesUsd,purchaseMga,freightMga,cardPurchase,cardFreight,cardFees:cardPurchase+cardFreight,reserve:state.customsReserve,localDelivery:state.localDelivery,serviceFee:service,cost,total,profit,rateTier:serviceRate(item),billable:billableWeight(),feesClient:Math.max(0,total-(item+domestic+ship.rateUsd)*rate)};
+  return{itemUsd:item,domesticUsd:domestic,visaRate:rate,shipping:ship,peFeesUsd:state.peFeesUsd,consolidationFeeUsd:consolidationFee,purchaseMga,freightMga,cardPurchase,cardFreight,cardFees:cardPurchase+cardFreight,reserve:state.customsReserve,localDelivery:state.localDelivery,serviceFee:service,cost,total,profit,rateTier:serviceRate(item),billable:billableWeight(),feesClient:Math.max(0,total-(item+domestic+ship.rateUsd)*rate)};
 }
 
 function syncInputs(){
   $("productUrl").value=state.product.url; $("clientAmount").value=fmtNumber(state.product.itemUsd,2); $("internalAmount").value=fmtNumber(state.product.itemUsd,2);
-  $("productTitleManual").value=state.product.title||"";
+  $("productTitleManual").value=state.product.title||""; $("manualBattery").checked=Boolean(state.package.battery);
   syncManualUnitInputs();
   $("weightLb").value=state.package.weight; $("lengthIn").value=state.package.length; $("widthIn").value=state.package.width; $("heightIn").value=state.package.height;
-  $("warehouse").value=state.warehouse; $("domesticUsd").value=state.product.domesticUsd; $("customsReserve").value=state.customsReserve; $("peFeesUsd").value=state.peFeesUsd; $("localDelivery").value=state.localDelivery; $("visaRateManual").value=state.visaRate.toFixed(2);
+  $("warehouse").value=state.warehouse; $("domesticUsd").value=state.product.domesticUsd; $("customsReserve").value=state.customsReserve; $("peFeesUsd").value=state.peFeesUsd; $("consolidationFeeUsd").value=state.consolidationFeeUsd; $("localDelivery").value=state.localDelivery; $("visaRateManual").value=state.visaRate.toFixed(2);
   renderShippingControls();
 }
 function updateRateStrip(){
@@ -142,13 +145,32 @@ async function fetchJSON(url,options={},timeout=18000){const c=new AbortControll
 async function refreshShipping(){
   const button=$("refreshShipping");button.disabled=true;button.textContent="Actualisation…";
   try{
-    const pkg=activeShippingPackage();
-    if(!pkg)throw new Error("Complète au moins 2 colis pour la consolidation");
-    const payload={warehouseId:state.warehouse,city:"Antananarivo",postalcode:"101",weight:pkg.weight,length:pkg.length,width:pkg.width,height:pkg.height,value:state.product.itemUsd};
-    const data=await fetchJSON(`${CONFIG.apiBase}/api/shipping-rates`,{method:"POST",body:JSON.stringify(payload)},22000);
-    state.shippingRates=(data.carriers||[]).filter(r=>["DHL","FedEx"].includes(r.carrier));
-    const preferred=bestRateForCarrier(state.selectedCarrier)||state.shippingRates[0]||null;state.selectedRate=preferred;if(preferred)state.selectedCarrier=preferred.carrier;
-    $("rateStatus").textContent=state.shippingRates.length?(state.shippingMode==="consolidation"?`Tarif consolidé estimé · ${pkg.count} colis regroupés`:"Tarifs transport actualisés"):"Aucun tarif disponible";$("statusDot").className=state.shippingRates.length?"status-dot":"status-dot warn";
+    let data;
+    if(state.shippingMode==="consolidation"){
+      ensureConsolidationPackages();
+      const packages=state.consolidationPackages.filter(packageComplete);
+      if(packages.length<2)throw new Error("Complète au moins 2 colis pour la consolidation");
+      data=await fetchJSON(`${CONFIG.apiBase}/api/consolidation-rates`,{method:"POST",body:JSON.stringify({warehouseId:state.warehouse,value:state.product.itemUsd,packages,hasBattery:packages.some(p=>p.battery),largeBattery:packages.some(p=>p.largeBattery||Number(p.batteryWh)>=100)})},26000);
+      state.consolidatedEstimate={...data.estimate.quote,count:data.estimate.packageCount,source:data.estimate.model,confidence:data.estimate.confidence};
+      state.shippingRates=(data.carriers||[]).filter(r=>["DHL","FedEx"].includes(r.carrier));
+      if(!state.shippingRates.length)throw new Error("Colis consolidé trop volumineux ou non admissible : il faut prévoir plusieurs envois");
+      const preferred=data.preferredCarrier?bestRateForCarrier(data.preferredCarrier):null;
+      state.selectedRate=preferred||bestRateForCarrier(state.selectedCarrier)||state.shippingRates[0]||null;
+      if(state.selectedRate)state.selectedCarrier=state.selectedRate.carrier;
+      const warning=data.warnings||[];
+      if(warning.includes("LARGE_BATTERY_REVIEW")){$("rateStatus").textContent=`Consolidation estimée · batterie >100 Wh : validation transport obligatoire`;$("statusDot").className="status-dot warn"}
+      else if(warning.includes("BATTERY_REVIEW")){$("rateStatus").textContent=`Consolidation optimisée · ${data.estimate.packageCount} colis · restriction batterie détectée`;$("statusDot").className="status-dot warn"}
+      else if(warning.includes("LIMITED_CARRIER_OPTIONS")){$("rateStatus").textContent=`Consolidation optimisée · options transport limitées par le gabarit`;$("statusDot").className="status-dot warn"}
+      else{$("rateStatus").textContent=`Consolidation optimisée · ${data.estimate.packageCount} colis regroupés`;$("statusDot").className="status-dot"}
+    }else{
+      const pkg=state.package;
+      const payload={warehouseId:state.warehouse,city:"Antananarivo",postalcode:"101",weight:pkg.weight,length:pkg.length,width:pkg.width,height:pkg.height,value:state.product.itemUsd};
+      data=await fetchJSON(`${CONFIG.apiBase}/api/shipping-rates`,{method:"POST",body:JSON.stringify(payload)},22000);
+      state.shippingRates=(data.carriers||[]).filter(r=>["DHL","FedEx"].includes(r.carrier));
+      const batteryFedex=state.package.battery?bestRateForCarrier("FedEx"):null;
+      const preferred=batteryFedex||bestRateForCarrier(state.selectedCarrier)||state.shippingRates[0]||null;state.selectedRate=preferred;if(preferred)state.selectedCarrier=preferred.carrier;
+      $("rateStatus").textContent=state.shippingRates.length?(state.package.largeBattery?"Tarifs indicatifs · batterie >100 Wh : validation transport obligatoire":state.package.battery?"Tarifs actualisés · restriction batterie à vérifier":"Tarifs transport actualisés"):"Aucun tarif disponible";$("statusDot").className=state.package.battery?"status-dot warn":(state.shippingRates.length?"status-dot":"status-dot warn");
+    }
   }catch(e){state.shippingRates=[];state.selectedRate=null;$("rateStatus").textContent=e.message||"Moteur transport indisponible";$("statusDot").className="status-dot warn"}
   finally{button.disabled=false;button.innerHTML='<svg class="icon sm"><use href="#i-refresh"/></svg>Actualiser le transport';renderRates();persistState();refreshAll()}
 }
@@ -165,7 +187,7 @@ async function analyzeProduct(){
     else if(basePrice>0) state.product.itemUsd=basePrice;
     // Le prix client affiché cumule déjà article + livraison vendeur détectée.
     state.product.domesticUsd=0;
-    if(data.packageEstimate){const p=data.packageEstimate;state.package={weight:Number(p.weightLb)||state.package.weight,length:Number(p.dimensionsIn?.length)||state.package.length,width:Number(p.dimensionsIn?.width)||state.package.width,height:Number(p.dimensionsIn?.height)||state.package.height,source:p.source||"estimé",confidence:Number(p.confidence)||0};if(state.shippingMode==="consolidation"){ensureConsolidationPackages();state.consolidationPackages[0]={...state.package}}}
+    if(data.packageEstimate){const p=data.packageEstimate,f=data.shippingFlags||{};state.package={weight:Number(p.weightLb)||state.package.weight,length:Number(p.dimensionsIn?.length)||state.package.length,width:Number(p.dimensionsIn?.width)||state.package.width,height:Number(p.dimensionsIn?.height)||state.package.height,source:p.source||"estimé",confidence:Number(p.confidence)||0,battery:Boolean(f.battery),batteryWh:Number(f.batteryWh)||null,largeBattery:Boolean(f.largeBattery)};state.consolidatedEstimate=null;if(state.shippingMode==="consolidation"){ensureConsolidationPackages();state.consolidationPackages[0]={...state.package}}}
     syncInputs();
     const platform=data.platform==="amazon"?"Amazon":"eBay";
     const shippingText=Number.isFinite(sellerShipping)?(sellerShipping>0?` · livraison vendeur ${fmtUSD(sellerShipping)} incluse`:` · livraison vendeur gratuite incluse`):` · livraison vendeur non détectée, à vérifier`;
@@ -241,10 +263,10 @@ function printAnyQuote(q){if(!q?.totalMGA)return;renderPrint(q);setTimeout(()=>w
 function readProductInputs(){
   state.product.url=$("productUrl").value.trim();state.product.itemUsd=num($("clientAmount").value);state.product.domesticUsd=num($("domesticUsd").value);
   state.package.weight=num($("weightLb").value);state.package.length=num($("lengthIn").value);state.package.width=num($("widthIn").value);state.package.height=num($("heightIn").value);
-  state.warehouse=$("warehouse").value;state.customsReserve=num($("customsReserve").value);state.peFeesUsd=num($("peFeesUsd").value);state.localDelivery=num($("localDelivery").value);
+  state.warehouse=$("warehouse").value;state.customsReserve=num($("customsReserve").value);state.peFeesUsd=num($("peFeesUsd").value);state.consolidationFeeUsd=num($("consolidationFeeUsd").value);state.localDelivery=num($("localDelivery").value);
   const manual=num($("visaRateManual").value);if(manual>=100)state.visaRate=manual;
   if(state.shippingMode==="consolidation"){ensureConsolidationPackages();state.consolidationPackages[0]={...state.package}}
-  state.shippingRates=[];state.selectedRate=null;renderRates();syncManualUnitInputs();persistState();refreshAll()
+  state.consolidatedEstimate=null;state.shippingRates=[];state.selectedRate=null;renderRates();syncManualUnitInputs();persistState();refreshAll()
 }
 function updateManualUnitHints(){
   if(!$("manualWeightMetric"))return;
@@ -265,11 +287,12 @@ function syncManualUnitInputs(){
   updateManualUnitHints();
 }
 function readManualUnitInputs(){
-  state.product.title=$("productTitleManual").value.trim();const metric=state.unitSystem==="metric";
+  state.product.title=$("productTitleManual").value.trim();state.package.battery=Boolean($("manualBattery").checked);const metric=state.unitSystem==="metric";
   const weight=num($("manualWeightLb").value),l=num($("manualLengthIn").value),w=num($("manualWidthIn").value),h=num($("manualHeightIn").value);
   if(weight>0)state.package.weight=metric?kgToLb(weight):weight;if(l>0)state.package.length=metric?cmToIn(l):l;if(w>0)state.package.width=metric?cmToIn(w):w;if(h>0)state.package.height=metric?cmToIn(h):h;
   $("weightLb").value=state.package.weight.toFixed(3);$("lengthIn").value=state.package.length.toFixed(3);$("widthIn").value=state.package.width.toFixed(3);$("heightIn").value=state.package.height.toFixed(3);
   if(state.shippingMode==="consolidation"){ensureConsolidationPackages();state.consolidationPackages[0]={...state.package}}
+  state.consolidatedEstimate=null;
   state.shippingRates=[];state.selectedRate=null;renderRates();updateManualUnitHints();persistState();refreshAll()
 }
 function renderShippingControls(renderPackages=true){
@@ -279,8 +302,8 @@ function renderShippingControls(renderPackages=true){
   $("itemPriceLabel").textContent=state.shippingMode==="consolidation"?"Prix total des articles":"Prix de l'article";
   if(state.shippingMode==="consolidation"){
     ensureConsolidationPackages();if(renderPackages)renderConsolidationPackages();
-    const pkg=estimateConsolidatedPackage();
-    $("consolidationEstimate").textContent=pkg?`Estimation consolidée : ${pkg.count} colis · ${fmtNumber(pkg.weight,2)} lb (${fmtNumber(lbToKg(pkg.weight),2)} kg) · ${fmtNumber(pkg.length,1)} × ${fmtNumber(pkg.width,1)} × ${fmtNumber(pkg.height,1)} in`:`Complète au moins 2 colis pour calculer l'envoi groupé.`;
+    const pkg=state.consolidatedEstimate||estimateConsolidatedPackage();
+    $("consolidationEstimate").textContent=pkg?`${state.consolidatedEstimate?"Estimation intelligente":"Pré-estimation"} : ${pkg.count||state.consolidationPackages.filter(packageComplete).length} colis · ${fmtNumber(pkg.weight,2)} lb (${fmtNumber(lbToKg(pkg.weight),2)} kg) · ${fmtNumber(pkg.length,1)} × ${fmtNumber(pkg.width,1)} × ${fmtNumber(pkg.height,1)} in`:`Complète au moins 2 colis pour calculer l'envoi groupé.`;
   }
 }
 function packageDisplayValue(value,type){
@@ -290,18 +313,19 @@ function packageDisplayValue(value,type){
 function packageUnit(type){return state.unitSystem==="us"?(type==="weight"?"lb":"in"):(type==="weight"?"kg":"cm")}
 function renderConsolidationPackages(){
   ensureConsolidationPackages();const box=$("consolidationPackages");
-  box.innerHTML=state.consolidationPackages.slice(1).map((p,i)=>{const idx=i+1;return `<div class="consolidation-package" data-package-index="${idx}"><div class="consolidation-package-title"><strong>Colis ${idx+1}</strong>${state.consolidationPackages.length>2?`<button type="button" data-remove-package="${idx}">Retirer</button>`:""}</div><div class="mini-grid four"><label>Poids ${packageUnit("weight")}<input data-pkg-field="weight" type="number" min="0" step="0.01" value="${packageDisplayValue(p.weight,"weight")?packageDisplayValue(p.weight,"weight").toFixed(2):''}"></label><label>L ${packageUnit("length")}<input data-pkg-field="length" type="number" min="0" step="0.1" value="${packageDisplayValue(p.length,"length")?packageDisplayValue(p.length,"length").toFixed(1):''}"></label><label>l ${packageUnit("width")}<input data-pkg-field="width" type="number" min="0" step="0.1" value="${packageDisplayValue(p.width,"width")?packageDisplayValue(p.width,"width").toFixed(1):''}"></label><label>H ${packageUnit("height")}<input data-pkg-field="height" type="number" min="0" step="0.1" value="${packageDisplayValue(p.height,"height")?packageDisplayValue(p.height,"height").toFixed(1):''}"></label></div></div>`}).join("");
+  box.innerHTML=state.consolidationPackages.slice(1).map((p,i)=>{const idx=i+1;return `<div class="consolidation-package" data-package-index="${idx}"><div class="consolidation-package-title"><strong>Colis ${idx+1}</strong><div class="package-title-actions"><label class="battery-check"><input data-pkg-field="battery" type="checkbox" ${p.battery?'checked':''}> Batterie</label>${state.consolidationPackages.length>2?`<button type="button" data-remove-package="${idx}">Retirer</button>`:""}</div></div><div class="mini-grid four"><label>Poids ${packageUnit("weight")}<input data-pkg-field="weight" type="number" min="0" step="0.01" value="${packageDisplayValue(p.weight,"weight")?packageDisplayValue(p.weight,"weight").toFixed(2):''}"></label><label>L ${packageUnit("length")}<input data-pkg-field="length" type="number" min="0" step="0.1" value="${packageDisplayValue(p.length,"length")?packageDisplayValue(p.length,"length").toFixed(1):''}"></label><label>l ${packageUnit("width")}<input data-pkg-field="width" type="number" min="0" step="0.1" value="${packageDisplayValue(p.width,"width")?packageDisplayValue(p.width,"width").toFixed(1):''}"></label><label>H ${packageUnit("height")}<input data-pkg-field="height" type="number" min="0" step="0.1" value="${packageDisplayValue(p.height,"height")?packageDisplayValue(p.height,"height").toFixed(1):''}"></label></div></div>`}).join("");
 }
 function setUnitSystem(mode){
   if(!["us","metric"].includes(mode)||mode===state.unitSystem)return;state.unitSystem=mode;syncManualUnitInputs();renderConsolidationPackages();renderShippingControls(false);persistState()
 }
 function setShippingMode(mode){
-  if(!["single","consolidation"].includes(mode)||mode===state.shippingMode)return;state.shippingMode=mode;if(mode==="consolidation")ensureConsolidationPackages();state.shippingRates=[];state.selectedRate=null;renderRates();renderShippingControls(true);persistState();refreshAll();$("rateStatus").textContent=mode==="consolidation"?"Consolidation activée · complète les colis puis recalcule le transport":"Colis unique activé · recalcule le transport";$("statusDot").className="status-dot warn"
+  if(!["single","consolidation"].includes(mode)||mode===state.shippingMode)return;state.shippingMode=mode;if(mode==="consolidation")ensureConsolidationPackages();state.consolidatedEstimate=null;state.shippingRates=[];state.selectedRate=null;renderRates();renderShippingControls(true);persistState();refreshAll();$("rateStatus").textContent=mode==="consolidation"?"Consolidation activée · complète les colis puis recalcule le transport":"Colis unique activé · recalcule le transport";$("statusDot").className="status-dot warn"
 }
 function readConsolidationPackageInput(target){
   const row=target.closest("[data-package-index]");if(!row)return;const idx=Number(row.dataset.packageIndex),field=target.dataset.pkgField;if(!field||!state.consolidationPackages[idx])return;
-  const value=num(target.value);state.consolidationPackages[idx][field]=state.unitSystem==="metric"?(field==="weight"?kgToLb(value):cmToIn(value)):value;
-  state.shippingRates=[];state.selectedRate=null;persistState();renderShippingControls(false);refreshAll()
+  if(field==="battery")state.consolidationPackages[idx].battery=Boolean(target.checked);
+  else {const value=num(target.value);state.consolidationPackages[idx][field]=state.unitSystem==="metric"?(field==="weight"?kgToLb(value):cmToIn(value)):value;}
+  state.consolidatedEstimate=null;state.shippingRates=[];state.selectedRate=null;persistState();renderShippingControls(false);refreshAll()
 }
 function syncAmountFromClient(){state.product.itemUsd=num($("clientAmount").value);$("internalAmount").value=fmtNumber(state.product.itemUsd,2);persistState();refreshAll()}
 function syncAmountFromInternal(){state.product.itemUsd=num($("internalAmount").value);$("clientAmount").value=fmtNumber(state.product.itemUsd,2);persistState();refreshAll()}
@@ -310,14 +334,14 @@ $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)
 $$('[data-carrier]').forEach(b=>b.addEventListener('click',()=>{state.selectedCarrier=b.dataset.carrier;state.selectedRate=bestRateForCarrier(state.selectedCarrier);persistState();refreshAll()}));
 $("topTransport").addEventListener("click",()=>{state.selectedCarrier=state.selectedCarrier==="DHL"?"FedEx":"DHL";state.selectedRate=bestRateForCarrier(state.selectedCarrier);persistState();refreshAll()});
 $("clientAmount").addEventListener("input",syncAmountFromClient);$("internalAmount").addEventListener("input",syncAmountFromInternal);
-["productUrl","weightLb","lengthIn","widthIn","heightIn","warehouse","domesticUsd","customsReserve","peFeesUsd","localDelivery","visaRateManual"].forEach(id=>$(id).addEventListener("input",readProductInputs));
-["productTitleManual","manualWeightLb","manualLengthIn","manualWidthIn","manualHeightIn"].forEach(id=>$(id).addEventListener("input",readManualUnitInputs));
+["productUrl","weightLb","lengthIn","widthIn","heightIn","warehouse","domesticUsd","customsReserve","peFeesUsd","consolidationFeeUsd","localDelivery","visaRateManual"].forEach(id=>$(id).addEventListener("input",readProductInputs));
+["productTitleManual","manualWeightLb","manualLengthIn","manualWidthIn","manualHeightIn","manualBattery"].forEach(id=>$(id).addEventListener("input",readManualUnitInputs));
 $("manualShipping").addEventListener("click",async()=>{readManualUnitInputs();await refreshShipping()});
 $("unitSwitch").addEventListener("click",e=>{const b=e.target.closest("[data-unit-system]");if(b)setUnitSystem(b.dataset.unitSystem)});
 $("shippingModeSwitch").addEventListener("click",e=>{const b=e.target.closest("[data-shipping-mode]");if(b)setShippingMode(b.dataset.shippingMode)});
-$("addConsolidationPackage").addEventListener("click",()=>{ensureConsolidationPackages();state.consolidationPackages.push({weight:0,length:0,width:0,height:0});renderConsolidationPackages();renderShippingControls(false);persistState()});
+$("addConsolidationPackage").addEventListener("click",()=>{ensureConsolidationPackages();state.consolidationPackages.push({weight:0,length:0,width:0,height:0,battery:false});renderConsolidationPackages();renderShippingControls(false);persistState()});
 $("consolidationPackages").addEventListener("input",e=>{if(e.target.matches("[data-pkg-field]"))readConsolidationPackageInput(e.target)});
-$("consolidationPackages").addEventListener("click",e=>{const b=e.target.closest("[data-remove-package]");if(!b)return;const idx=Number(b.dataset.removePackage);if(state.consolidationPackages.length>2){state.consolidationPackages.splice(idx,1);state.shippingRates=[];state.selectedRate=null;renderRates();renderConsolidationPackages();renderShippingControls(false);persistState();refreshAll()}});
+$("consolidationPackages").addEventListener("click",e=>{const b=e.target.closest("[data-remove-package]");if(!b)return;const idx=Number(b.dataset.removePackage);if(state.consolidationPackages.length>2){state.consolidationPackages.splice(idx,1);state.consolidatedEstimate=null;state.shippingRates=[];state.selectedRate=null;renderRates();renderConsolidationPackages();renderShippingControls(false);persistState();refreshAll()}});
 $("analyzeProduct").addEventListener("click",analyzeProduct);$("refreshShipping").addEventListener("click",refreshShipping);$("refreshRates").addEventListener("click",()=>Promise.allSettled([refreshVisa(),refreshShipping()]));
 $("internalRates").addEventListener("click",e=>{const row=e.target.closest("[data-rate-id]");if(!row)return;const rate=state.shippingRates.find(r=>String(r.id)===row.dataset.rateId);if(rate){state.selectedRate=rate;state.selectedCarrier=rate.carrier;renderRates();persistState();refreshAll()}});
 $("openQuote").addEventListener("click",()=>openQuote());$("newQuoteTop").addEventListener("click",()=>openQuote());$("closeQuote").addEventListener("click",closeQuote);$("quoteSheet").addEventListener("click",e=>{if(e.target===$("quoteSheet"))closeQuote()});
