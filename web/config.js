@@ -1,3 +1,3 @@
 window.EVIDY = Object.freeze({
-  apiBase: 'https://jackson-bulletin-purposes-lopez.trycloudflare.com'
+  apiBase: 'https://clear-consequently-manually-protocols.trycloudflare.com'
 });
