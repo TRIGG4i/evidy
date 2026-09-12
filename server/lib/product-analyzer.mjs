@@ -349,6 +349,7 @@ export const detectShippingFlags = (title, description='') => {
 };
 
 const HS_RULES = [
+  // Électronique / informatique
   { code:'85287200', confidence:.97, label:'Téléviseur couleur', re:/\b(tv|television|oled tv|qled tv|smart tv)\b/i },
   { code:'85258000', confidence:.96, label:'Caméra / appareil photo numérique', re:/\b(camera|camcorder|dashcam|dash cam|dslr|mirrorless)\b/i },
   { code:'85171300', confidence:.91, label:'Smartphone', re:/\b(iphone|smartphone|mobile phone|galaxy s\d|pixel \d)\b/i },
@@ -358,7 +359,57 @@ const HS_RULES = [
   { code:'85285200', confidence:.82, label:'Moniteur informatique', re:/\b(computer monitor|gaming monitor|pc monitor)\b/i },
   { code:'85076000', confidence:.68, label:'Batterie lithium-ion / station d’énergie portable', re:/\b(portable power station|solar generator|lifepo4 power station|ecoflow delta|jackery explorer|bluetti)\b/i },
   { code:'95045000', confidence:.74, label:'Contrôleur de jeu / volant de simulation', re:/\b(racing wheel|steering wheel controller|trueforce racing|sim racing wheel)\b/i },
-  { code:'64039900', confidence:.72, label:'Chaussures', re:/\b(shoes|sneakers|trainers)\b/i }
+
+  // Mode / chaussures / accessoires. Les matières peuvent changer la sous-position finale.
+  { code:'610910', confidence:.82, label:'T-shirt en coton, maille', re:/\b(cotton t-?shirt|t-?shirt.*cotton)\b/i },
+  { code:'611020', confidence:.76, label:'Pull / sweat en coton, maille', re:/\b(cotton (sweater|sweatshirt|hoodie)|(?:sweater|sweatshirt|hoodie).*cotton)\b/i },
+  { code:'611030', confidence:.70, label:'Pull / sweat en fibres synthétiques', re:/\b(polyester|synthetic).*(sweater|sweatshirt|hoodie)|(?:sweater|sweatshirt|hoodie).*(polyester|synthetic)\b/i },
+  { code:'620342', confidence:.82, label:'Pantalon / jean homme en coton', re:/\b(men|men'?s|male).*(jeans?|cotton trousers?)|(?:jeans?|cotton trousers?).*(men|men'?s|male)\b/i },
+  { code:'620462', confidence:.80, label:'Pantalon / jean femme en coton', re:/\b(women|women'?s|female).*(jeans?|cotton trousers?)|(?:jeans?|cotton trousers?).*(women|women'?s|female)\b/i },
+  { code:'640411', confidence:.73, label:'Chaussures de sport à dessus textile', re:/\b(running shoes?|sports? shoes?|trainers?|sneakers?)\b.*\b(textile|mesh|fabric)\b|\b(textile|mesh|fabric)\b.*\b(running shoes?|sports? shoes?|trainers?|sneakers?)\b/i },
+  { code:'640399', confidence:.62, label:'Chaussures à dessus cuir, autres', re:/\b(leather shoes?|leather sneakers?|leather boots?)\b/i },
+  { code:'420292', confidence:.62, label:'Sac / bagage à surface textile ou plastique', re:/\b(backpack|rucksack|travel bag|duffel bag|handbag|laptop bag)\b/i },
+
+  // Maison / cuisine / ameublement
+  { code:'940360', confidence:.74, label:'Meuble en bois', re:/\b(wooden|wood).*(table|desk|cabinet|dresser|bookshelf|shelf|furniture)|(?:table|desk|cabinet|dresser|bookshelf|shelf|furniture).*(wooden|wood)\b/i },
+  { code:'940320', confidence:.68, label:'Meuble en métal', re:/\b(metal|steel).*(table|desk|cabinet|shelf|furniture)|(?:table|desk|cabinet|shelf|furniture).*(metal|steel)\b/i },
+  { code:'940130', confidence:.72, label:'Siège pivotant / chaise de bureau', re:/\b(office chair|gaming chair|swivel chair)\b/i },
+  { code:'940421', confidence:.70, label:'Matelas en mousse / plastique cellulaire', re:/\b(foam mattress|memory foam mattress)\b/i },
+  { code:'630260', confidence:.83, label:'Linge de toilette en coton', re:/\b(cotton (bath )?towels?|(?:bath )?towels?.*cotton)\b/i },
+  { code:'630231', confidence:.78, label:'Linge de lit en coton', re:/\b(cotton (bed sheets?|bed linen|duvet cover)|(?:bed sheets?|bed linen|duvet cover).*cotton)\b/i },
+  { code:'691110', confidence:.72, label:'Vaisselle en porcelaine', re:/\b(porcelain|china).*(plate|bowl|mug|cup|dinnerware|tableware)\b/i },
+  { code:'732393', confidence:.72, label:'Articles de cuisine en acier inoxydable', re:/\b(stainless steel).*(cookware|pan|pot|kitchenware)\b/i },
+  { code:'701349', confidence:.65, label:'Verrerie de table / cuisine', re:/\b(glassware|drinking glass|glass bowl|glass cup)\b/i },
+  { code:'850940', confidence:.78, label:'Mixeur / robot ménager électrique', re:/\b(blender|food processor|electric mixer)\b/i },
+  { code:'850811', confidence:.72, label:'Aspirateur électrique', re:/\b(vacuum cleaner|cordless vacuum|stick vacuum)\b/i },
+  { code:'851660', confidence:.70, label:'Appareil électrique de cuisson', re:/\b(air fryer|electric oven|toaster oven|electric cooker)\b/i },
+  { code:'851679', confidence:.64, label:'Autre appareil électrothermique domestique', re:/\b(electric kettle|coffee maker|coffee machine|waffle maker)\b/i },
+
+  // Beauté / soins personnels
+  { code:'330499', confidence:.76, label:'Produits de beauté / soins de la peau', re:/\b(face cream|skin care|skincare|moisturizer|serum|makeup|cosmetic)\b/i },
+  { code:'330510', confidence:.86, label:'Shampooing', re:/\bshampoo\b/i },
+  { code:'330300', confidence:.80, label:'Parfum / eau de toilette', re:/\b(perfume|eau de parfum|eau de toilette|fragrance)\b/i },
+  { code:'851020', confidence:.77, label:'Tondeuse / coupe-cheveux électrique', re:/\b(hair clipper|electric trimmer|beard trimmer)\b/i },
+  { code:'851631', confidence:.82, label:'Sèche-cheveux', re:/\b(hair dryer|blow dryer)\b/i },
+
+  // Jouets / sport / loisirs
+  { code:'950300', confidence:.72, label:'Jouet', re:/\b(action figure|doll|toy car|construction toy|building blocks|kids toy|children'?s toy)\b/i },
+  { code:'950490', confidence:.68, label:'Jeu de société / jeu de salon', re:/\b(board game|table game|card game set)\b/i },
+  { code:'950691', confidence:.74, label:'Matériel de fitness / gymnastique', re:/\b(treadmill|exercise bike|dumbbell|barbell|fitness equipment|gym equipment)\b/i },
+  { code:'950699', confidence:.62, label:'Article de sport, autre', re:/\b(sports equipment|soccer ball|football ball|basketball|tennis racket|badminton racket)\b/i },
+
+  // Automobile / outils / bricolage
+  { code:'870899', confidence:.58, label:'Pièce / accessoire automobile, autre', re:/\b(car part|automotive part|vehicle accessory|auto accessory)\b/i },
+  { code:'846721', confidence:.78, label:'Perceuse électrique', re:/\b(cordless drill|electric drill|power drill)\b/i },
+  { code:'846729', confidence:.64, label:'Outil électrique portatif, autre', re:/\b(power tool|angle grinder|electric sander|impact driver)\b/i },
+  { code:'820559', confidence:.58, label:'Outil à main, autre', re:/\b(hand tool|screwdriver set|wrench set|pliers set)\b/i },
+
+  // Livres / papeterie / divers grand public
+  { code:'490199', confidence:.88, label:'Livre imprimé', re:/\b(book|paperback|hardcover|printed book)\b/i },
+  { code:'340600', confidence:.82, label:'Bougie', re:/\b(candle|scented candle)\b/i },
+  { code:'871500', confidence:.80, label:'Poussette / voiture d’enfant', re:/\b(stroller|baby carriage|pushchair)\b/i },
+  { code:'711719', confidence:.60, label:'Bijouterie de fantaisie', re:/\b(costume jewelry|fashion jewelry|imitation jewelry)\b/i },
+  { code:'910211', confidence:.66, label:'Montre-bracelet à pile, affichage mécanique', re:/\b(quartz wristwatch|analog quartz watch|battery wristwatch)\b/i }
 ];
 
 const normalizeHsCode = (raw='') => {
