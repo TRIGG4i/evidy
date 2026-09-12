@@ -1,10 +1,10 @@
 [Unit]
-Description=Periodic eVidy runtime health check
+Description=Periodic eVidy runtime and endpoint synchronization
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=5min
-AccuracySec=30s
+OnBootSec=45s
+OnUnitActiveSec=1min
+AccuracySec=10s
 Persistent=true
 
 [Install]

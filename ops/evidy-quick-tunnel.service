@@ -1,0 +1,14 @@
+[Unit]
+Description=eVidy browser-safe public API tunnel
+After=network-online.target evidy-api.service
+Wants=network-online.target
+Requires=evidy-api.service
+
+[Service]
+Type=simple
+ExecStart=/home/trigg4ci/retaineo-preview/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:4280 --logfile /var/log/evidy-quick-tunnel.log --loglevel info
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

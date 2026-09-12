@@ -1,6 +1,6 @@
 [Unit]
-Description=eVidy API and public funnel health check
-After=network-online.target evidy-api.service tailscaled.service
+Description=eVidy runtime health and public endpoint synchronization
+After=network-online.target evidy-api.service evidy-quick-tunnel.service
 
 [Service]
 Type=oneshot
