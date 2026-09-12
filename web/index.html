@@ -60,7 +60,7 @@
           <button id="analyzeProduct" type="button">Analyser</button>
         </div>
 
-        <div class="field-label amount-label"><span>Prix de l'article</span><span>USD</span></div>
+        <div class="field-label amount-label"><span id="itemPriceLabel">Prix de l'article</span><span>USD</span></div>
         <div class="amount-box">
           <div class="amount-currency"><span class="currency-dot usd"></span><span>USD</span></div>
           <input id="clientAmount" class="amount-input" type="text" inputmode="decimal" autocomplete="off" value="551.99" aria-label="Prix de l'article" />
@@ -92,11 +92,26 @@
             <div class="manual-product-grid">
               <label>Nom de l'article<input id="productTitleManual" type="text" placeholder="Ex. iPhone 14 Pro Max 512 Go" /></label>
             </div>
+            <div class="manual-toolbar">
+              <div class="mini-segment unit-switch" id="unitSwitch" aria-label="Système d’unités">
+                <button type="button" data-unit-system="us" class="active">US</button>
+                <button type="button" data-unit-system="metric">International</button>
+              </div>
+              <div class="mini-segment shipping-mode-switch" id="shippingModeSwitch" aria-label="Mode d’envoi">
+                <button type="button" data-shipping-mode="single" class="active">1 colis</button>
+                <button type="button" data-shipping-mode="consolidation">Consolidation</button>
+              </div>
+            </div>
             <div class="mini-grid four imperial-grid">
-              <label>Poids lb <span class="unit-secondary" id="manualWeightMetric">(— kg)</span><input id="manualWeightLb" type="number" step="0.01" min="0.01" /></label>
-              <label>L in <span class="unit-secondary" id="manualLengthMetric">(— cm)</span><input id="manualLengthIn" type="number" step="0.1" min="0.1" /></label>
-              <label>l in <span class="unit-secondary" id="manualWidthMetric">(— cm)</span><input id="manualWidthIn" type="number" step="0.1" min="0.1" /></label>
-              <label>H in <span class="unit-secondary" id="manualHeightMetric">(— cm)</span><input id="manualHeightIn" type="number" step="0.1" min="0.1" /></label>
+              <label><span id="manualWeightLabel">Poids lb</span> <span class="unit-secondary" id="manualWeightMetric">(— kg)</span><input id="manualWeightLb" type="number" step="0.01" min="0.01" /></label>
+              <label><span id="manualLengthLabel">L in</span> <span class="unit-secondary" id="manualLengthMetric">(— cm)</span><input id="manualLengthIn" type="number" step="0.1" min="0.1" /></label>
+              <label><span id="manualWidthLabel">l in</span> <span class="unit-secondary" id="manualWidthMetric">(— cm)</span><input id="manualWidthIn" type="number" step="0.1" min="0.1" /></label>
+              <label><span id="manualHeightLabel">H in</span> <span class="unit-secondary" id="manualHeightMetric">(— cm)</span><input id="manualHeightIn" type="number" step="0.1" min="0.1" /></label>
+            </div>
+            <div id="consolidationPanel" class="consolidation-panel" hidden>
+              <div class="consolidation-head"><div><strong>Colis à regrouper</strong><span>Un seul envoi international sera calculé.</span></div><button type="button" id="addConsolidationPackage">+ Ajouter</button></div>
+              <div id="consolidationPackages" class="consolidation-packages"></div>
+              <div class="consolidation-note" id="consolidationEstimate">Estimation consolidée : —</div>
             </div>
             <button class="secondary manual-shipping-action" id="manualShipping" type="button"><svg class="icon sm"><use href="#i-refresh"/></svg>Calculer le transport</button>
             <div class="detail-list compact-details">

@@ -29,6 +29,9 @@ const state={
   ratesDate:saved.ratesDate||null,
   product:{url:saved.product?.url||"",title:saved.product?.title||"",itemUsd:Number(saved.product?.itemUsd)||551.99,domesticUsd:Number(saved.product?.domesticUsd)||0},
   package:{weight:Number(saved.package?.weight)||2.5,length:Number(saved.package?.length)||11,width:Number(saved.package?.width)||9,height:Number(saved.package?.height)||4,source:saved.package?.source||"manuel",confidence:Number(saved.package?.confidence)||0},
+  unitSystem:saved.unitSystem==="metric"?"metric":"us",
+  shippingMode:saved.shippingMode==="consolidation"?"consolidation":"single",
+  consolidationPackages:Array.isArray(saved.consolidationPackages)?saved.consolidationPackages.map(p=>({weight:Number(p.weight)||0,length:Number(p.length)||0,width:Number(p.width)||0,height:Number(p.height)||0})):[],
   warehouse:String(saved.warehouse||"4"),
   customsReserve:Number(saved.customsReserve)||200000,
   peFeesUsd:Number(saved.peFeesUsd)||CONFIG.peDefaultFeeUSD,
@@ -39,7 +42,7 @@ const state={
 };
 
 function persistState(){
-  try{localStorage.setItem("evidyStateV1",JSON.stringify({visaRate:state.visaRate,ratesDate:state.ratesDate,product:state.product,package:state.package,warehouse:state.warehouse,customsReserve:state.customsReserve,peFeesUsd:state.peFeesUsd,localDelivery:state.localDelivery,selectedCarrier:state.selectedCarrier}))}catch{}
+  try{localStorage.setItem("evidyStateV1",JSON.stringify({visaRate:state.visaRate,ratesDate:state.ratesDate,product:state.product,package:state.package,unitSystem:state.unitSystem,shippingMode:state.shippingMode,consolidationPackages:state.consolidationPackages,warehouse:state.warehouse,customsReserve:state.customsReserve,peFeesUsd:state.peFeesUsd,localDelivery:state.localDelivery,selectedCarrier:state.selectedCarrier}))}catch{}
 }
 function serviceRate(itemUsd){return itemUsd<=350?.30:itemUsd<=900?.25:.15}
 function serviceFeeMGA(itemUsd,domesticUsd,rate){
@@ -49,7 +52,27 @@ function serviceFeeMGA(itemUsd,domesticUsd,rate){
   return Math.round(Math.max(base*tier,CONFIG.minimumServiceFeeMGA,continuity));
 }
 function cardFeeMGA(base){return Math.round(base*CONFIG.cardFeePercent/100+CONFIG.fixedVisaFeeMGA)}
-function billableWeight(){return Math.ceil(Math.max(state.package.weight,state.package.length*state.package.width*state.package.height/166))}
+function packageComplete(p){return p&&[p.weight,p.length,p.width,p.height].every(v=>Number(v)>0)}
+function ensureConsolidationPackages(){
+  if(!Array.isArray(state.consolidationPackages))state.consolidationPackages=[];
+  if(!state.consolidationPackages.length)state.consolidationPackages=[{...state.package},{weight:0,length:0,width:0,height:0}];
+  else state.consolidationPackages[0]={...state.package};
+  while(state.consolidationPackages.length<2)state.consolidationPackages.push({weight:0,length:0,width:0,height:0});
+}
+function estimateConsolidatedPackage(){
+  if(state.shippingMode!=="consolidation")return state.package;
+  ensureConsolidationPackages();
+  const packages=state.consolidationPackages.filter(packageComplete);
+  if(packages.length<2)return null;
+  const boxes=packages.map(p=>[p.length,p.width,p.height].map(Number).sort((a,b)=>b-a));
+  const innerL=Math.max(...boxes.map(d=>d[0])),innerW=Math.max(...boxes.map(d=>d[1])),maxH=Math.max(...boxes.map(d=>d[2]));
+  const volume=packages.reduce((sum,p)=>sum+p.length*p.width*p.height,0)*1.15;
+  const innerH=Math.max(maxH,volume/Math.max(innerL*innerW,1));
+  const rawWeight=packages.reduce((sum,p)=>sum+Number(p.weight),0);
+  return{weight:rawWeight*1.06+0.5,length:innerL+1,width:innerW+1,height:innerH+1,source:"consolidation-estimate",confidence:.62,count:packages.length};
+}
+function activeShippingPackage(){return state.shippingMode==="consolidation"?(estimateConsolidatedPackage()||null):state.package}
+function billableWeight(){const p=activeShippingPackage();return p?Math.ceil(Math.max(p.weight,p.length*p.width*p.height/166)):0}
 function bestRateForCarrier(carrier){return state.shippingRates.filter(r=>r.carrier===carrier).sort((a,b)=>a.rateUsd-b.rateUsd)[0]||null}
 function selectedShipping(){return state.selectedRate||bestRateForCarrier(state.selectedCarrier)}
 function calculate(){
@@ -65,10 +88,10 @@ function calculate(){
 function syncInputs(){
   $("productUrl").value=state.product.url; $("clientAmount").value=fmtNumber(state.product.itemUsd,2); $("internalAmount").value=fmtNumber(state.product.itemUsd,2);
   $("productTitleManual").value=state.product.title||"";
-  $("manualWeightLb").value=state.package.weight.toFixed(2); $("manualLengthIn").value=state.package.length.toFixed(1); $("manualWidthIn").value=state.package.width.toFixed(1); $("manualHeightIn").value=state.package.height.toFixed(1);
-  updateManualUnitHints();
+  syncManualUnitInputs();
   $("weightLb").value=state.package.weight; $("lengthIn").value=state.package.length; $("widthIn").value=state.package.width; $("heightIn").value=state.package.height;
   $("warehouse").value=state.warehouse; $("domesticUsd").value=state.product.domesticUsd; $("customsReserve").value=state.customsReserve; $("peFeesUsd").value=state.peFeesUsd; $("localDelivery").value=state.localDelivery; $("visaRateManual").value=state.visaRate.toFixed(2);
+  renderShippingControls();
 }
 function updateRateStrip(){
   $("rateUSD").textContent=fmtNumber(state.visaRate,2);const ship=selectedShipping();$("transportTop").textContent=ship?fmtUSD(ship.rateUsd):"—";
@@ -81,13 +104,19 @@ function renderRates(){
 function refreshAll(){
   const t=calculate();state.lastCalc=t;
   updateRateStrip();
-  $("clientPackageMeta").textContent=`${fmtNumber(state.package.weight,2)} lb (${fmtNumber(lbToKg(state.package.weight),2)} kg) · ${fmtNumber(state.package.length,1)} × ${fmtNumber(state.package.width,1)} × ${fmtNumber(state.package.height,1)} in (${fmtNumber(inToCm(state.package.length),1)} × ${fmtNumber(inToCm(state.package.width),1)} × ${fmtNumber(inToCm(state.package.height),1)} cm)`;
-  $("clientBillableMetric").textContent=`${billableWeight()} lb (${fmtNumber(lbToKg(billableWeight()),2)} kg)`;
-  updateManualUnitHints();
+  const pkg=activeShippingPackage();
+  if(pkg){
+    const prefix=state.shippingMode==="consolidation"?`Consolidation ${pkg.count||2} colis · `:"";
+    $("clientPackageMeta").textContent=`${prefix}${fmtNumber(pkg.weight,2)} lb (${fmtNumber(lbToKg(pkg.weight),2)} kg) · ${fmtNumber(pkg.length,1)} × ${fmtNumber(pkg.width,1)} × ${fmtNumber(pkg.height,1)} in (${fmtNumber(inToCm(pkg.length),1)} × ${fmtNumber(inToCm(pkg.width),1)} × ${fmtNumber(inToCm(pkg.height),1)} cm)`;
+    $("clientBillableMetric").textContent=`${billableWeight()} lb (${fmtNumber(lbToKg(billableWeight()),2)} kg)`;
+  }else{
+    $("clientPackageMeta").textContent="Complète au moins 2 colis";$("clientBillableMetric").textContent="—";
+  }
+  updateManualUnitHints();renderShippingControls(false);
   $$("[data-carrier]").forEach(b=>b.classList.toggle("active",b.dataset.carrier===state.selectedCarrier));
   if(!t){
     $("clientTotal").textContent=$("internalCost").textContent=$("netProfit").textContent=$("internalClientTotal").textContent="—";
-    $("clientRateMeta").textContent=`1 USD = ${fmtNumber(state.visaRate,2)} MGA`;$("clientTransportMeta").textContent="À calculer";$("internalShipping").textContent="—";$("billableWeight").textContent=`${billableWeight()} lb (${fmtNumber(lbToKg(billableWeight()),2)} kg)`;return;
+    $("clientRateMeta").textContent=`1 USD = ${fmtNumber(state.visaRate,2)} MGA`;$("clientTransportMeta").textContent="À calculer";$("internalShipping").textContent="—";$("billableWeight").textContent=billableWeight()?`${billableWeight()} lb (${fmtNumber(lbToKg(billableWeight()),2)} kg)`:"—";return;
   }
   $("clientTotal").textContent=fmtNumber(t.total,0);$("clientRateMeta").textContent=`1 USD = ${fmtNumber(t.visaRate,2)} MGA`;$("clientTransportMeta").textContent=`${t.shipping.carrier} · ${fmtUSD(t.shipping.rateUsd)}`;
   $("internalCost").textContent=fmtNumber(t.cost,0);$("internalShipping").textContent=`${t.shipping.carrier} · ${fmtUSD(t.shipping.rateUsd)}`;$("billableWeight").textContent=`${t.billable} lb (${fmtNumber(lbToKg(t.billable),2)} kg)`;
@@ -113,12 +142,14 @@ async function fetchJSON(url,options={},timeout=18000){const c=new AbortControll
 async function refreshShipping(){
   const button=$("refreshShipping");button.disabled=true;button.textContent="Actualisation…";
   try{
-    const payload={warehouseId:state.warehouse,city:"Antananarivo",postalcode:"101",weight:state.package.weight,length:state.package.length,width:state.package.width,height:state.package.height,value:state.product.itemUsd};
+    const pkg=activeShippingPackage();
+    if(!pkg)throw new Error("Complète au moins 2 colis pour la consolidation");
+    const payload={warehouseId:state.warehouse,city:"Antananarivo",postalcode:"101",weight:pkg.weight,length:pkg.length,width:pkg.width,height:pkg.height,value:state.product.itemUsd};
     const data=await fetchJSON(`${CONFIG.apiBase}/api/shipping-rates`,{method:"POST",body:JSON.stringify(payload)},22000);
     state.shippingRates=(data.carriers||[]).filter(r=>["DHL","FedEx"].includes(r.carrier));
     const preferred=bestRateForCarrier(state.selectedCarrier)||state.shippingRates[0]||null;state.selectedRate=preferred;if(preferred)state.selectedCarrier=preferred.carrier;
-    $("rateStatus").textContent=state.shippingRates.length?"Tarifs transport actualisés":"Aucun tarif disponible";$("statusDot").className=state.shippingRates.length?"status-dot":"status-dot warn";
-  }catch(e){$("rateStatus").textContent="Moteur transport indisponible, complète le colis puis réessaie";$("statusDot").className="status-dot warn"}
+    $("rateStatus").textContent=state.shippingRates.length?(state.shippingMode==="consolidation"?`Tarif consolidé estimé · ${pkg.count} colis regroupés`:"Tarifs transport actualisés"):"Aucun tarif disponible";$("statusDot").className=state.shippingRates.length?"status-dot":"status-dot warn";
+  }catch(e){state.shippingRates=[];state.selectedRate=null;$("rateStatus").textContent=e.message||"Moteur transport indisponible";$("statusDot").className="status-dot warn"}
   finally{button.disabled=false;button.innerHTML='<svg class="icon sm"><use href="#i-refresh"/></svg>Actualiser le transport';renderRates();persistState();refreshAll()}
 }
 async function analyzeProduct(){
@@ -134,7 +165,7 @@ async function analyzeProduct(){
     else if(basePrice>0) state.product.itemUsd=basePrice;
     // Le prix client affiché cumule déjà article + livraison vendeur détectée.
     state.product.domesticUsd=0;
-    if(data.packageEstimate){const p=data.packageEstimate;state.package={weight:Number(p.weightLb)||state.package.weight,length:Number(p.dimensionsIn?.length)||state.package.length,width:Number(p.dimensionsIn?.width)||state.package.width,height:Number(p.dimensionsIn?.height)||state.package.height,source:p.source||"estimé",confidence:Number(p.confidence)||0}}
+    if(data.packageEstimate){const p=data.packageEstimate;state.package={weight:Number(p.weightLb)||state.package.weight,length:Number(p.dimensionsIn?.length)||state.package.length,width:Number(p.dimensionsIn?.width)||state.package.width,height:Number(p.dimensionsIn?.height)||state.package.height,source:p.source||"estimé",confidence:Number(p.confidence)||0};if(state.shippingMode==="consolidation"){ensureConsolidationPackages();state.consolidationPackages[0]={...state.package}}}
     syncInputs();
     const platform=data.platform==="amazon"?"Amazon":"eBay";
     const shippingText=Number.isFinite(sellerShipping)?(sellerShipping>0?` · livraison vendeur ${fmtUSD(sellerShipping)} incluse`:` · livraison vendeur gratuite incluse`):` · livraison vendeur non détectée, à vérifier`;
@@ -153,13 +184,16 @@ async function analyzeProduct(){
 
 function nextQuoteNumber(){const d=new Date(),key=`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;const store="evidyQuoteSequenceV1";let data={};try{data=JSON.parse(localStorage.getItem(store)||"{}")}catch{}data[key]=(data[key]||0)+1;localStorage.setItem(store,JSON.stringify(data));return `EV-${key}-${String(data[key]).padStart(3,"0")}`}
 function quotePackageSnapshot(t=calculate()){
+  const pkg=activeShippingPackage()||state.package;
   return{
-    packageWeightKg:lbToKg(state.package.weight),
-    packageLengthCm:inToCm(state.package.length),
-    packageWidthCm:inToCm(state.package.width),
-    packageHeightCm:inToCm(state.package.height),
+    packageWeightKg:lbToKg(pkg.weight),
+    packageLengthCm:inToCm(pkg.length),
+    packageWidthCm:inToCm(pkg.width),
+    packageHeightCm:inToCm(pkg.height),
     billableWeightKg:lbToKg(t?.billable||billableWeight()),
-    packageSource:state.package.source||"estimé"
+    packageSource:pkg.source||"estimé",
+    consolidated:state.shippingMode==="consolidation",
+    packageCount:state.shippingMode==="consolidation"?(pkg.count||state.consolidationPackages.filter(packageComplete).length):1
   }
 }
 function currentDraft(){
@@ -204,10 +238,71 @@ function renderPrint(q){
   $("printStage").innerHTML=`<article class="print-page"><header class="print-head"><div class="print-brand"><img src="assets/evidy-mark.svg" style="width:42px;height:42px"><div><strong>eVidy US</strong><span>Devis d'achat assisté</span></div></div><div class="print-title"><h1>DEVIS</h1><p>${escapeHTML(q.number)} · ${escapeHTML(displayDate(q.createdAt))}</p></div></header><section class="print-client"><div class="print-block"><span>Client</span><strong>${escapeHTML(q.client||"Client non renseigné")}${q.phone?`<br>${escapeHTML(q.phone)}`:""}</strong></div></section><table class="print-table"><thead><tr><th>Description</th><th>Détail</th><th>Montant / mesure</th></tr></thead><tbody><tr><td>${escapeHTML(q.productTitle||"Article USA")}</td><td>Prix article</td><td>${escapeHTML(fmtUSD(q.itemUsd))}</td></tr><tr><td>Dimensions du colis</td><td>Estimation</td><td>${escapeHTML(`${fmtNumber(l,1)} × ${fmtNumber(d,1)} × ${fmtNumber(h,1)} cm`)}</td></tr><tr><td>Poids approximatif</td><td>Poids retenu pour le transport</td><td>${escapeHTML(fmtNumber(bill,2))} kg</td></tr><tr><td>Transport international</td><td>${escapeHTML(`${q.shippingCarrier||''} ${q.shippingService||''}`.trim())}</td><td>${escapeHTML(fmtUSD(q.shippingUsd))}</td></tr><tr><td>Taux VISA</td><td>1 USD</td><td>${escapeHTML(fmtNumber(q.visaRate,2))} MGA</td></tr><tr><td>Frais & traitement</td><td>Frais applicables inclus</td><td>${escapeHTML(fmtMGA(q.feesClientMGA,0))}</td></tr></tbody></table><div class="print-total"><span>Total à payer</span><strong>${escapeHTML(fmtMGA(q.totalMGA,0))}</strong></div>${q.note?`<p class="print-note"><strong>Note :</strong> ${escapeHTML(q.note)}</p>`:`<p class="print-note">Dimensions et poids approximatif établis avant réception physique du colis.</p>`}<footer class="print-footer"><span>eVidy US · Service opéré par PREST OFFICE</span><span>${escapeHTML(q.number)}</span></footer></article>`;
 }
 function printAnyQuote(q){if(!q?.totalMGA)return;renderPrint(q);setTimeout(()=>window.print(),60)}
-function readProductInputs(){state.product.url=$("productUrl").value.trim();state.product.itemUsd=num($("clientAmount").value);state.product.domesticUsd=num($("domesticUsd").value);state.package.weight=num($("weightLb").value);state.package.length=num($("lengthIn").value);state.package.width=num($("widthIn").value);state.package.height=num($("heightIn").value);state.warehouse=$("warehouse").value;state.customsReserve=num($("customsReserve").value);state.peFeesUsd=num($("peFeesUsd").value);state.localDelivery=num($("localDelivery").value);const manual=num($("visaRateManual").value);if(manual>=100)state.visaRate=manual;syncManualFromImperial();persistState();refreshAll()}
-function updateManualUnitHints(){if(!$("manualWeightMetric"))return;$("manualWeightMetric").textContent=`(${fmtNumber(lbToKg(state.package.weight),2)} kg)`;$("manualLengthMetric").textContent=`(${fmtNumber(inToCm(state.package.length),1)} cm)`;$("manualWidthMetric").textContent=`(${fmtNumber(inToCm(state.package.width),1)} cm)`;$("manualHeightMetric").textContent=`(${fmtNumber(inToCm(state.package.height),1)} cm)`}
-function syncManualFromImperial(){$("manualWeightLb").value=state.package.weight.toFixed(2);$("manualLengthIn").value=state.package.length.toFixed(1);$("manualWidthIn").value=state.package.width.toFixed(1);$("manualHeightIn").value=state.package.height.toFixed(1);updateManualUnitHints()}
-function readManualImperialInputs(){state.product.title=$("productTitleManual").value.trim();const weight=num($("manualWeightLb").value),l=num($("manualLengthIn").value),w=num($("manualWidthIn").value),h=num($("manualHeightIn").value);if(weight>0)state.package.weight=weight;if(l>0)state.package.length=l;if(w>0)state.package.width=w;if(h>0)state.package.height=h;$("weightLb").value=state.package.weight.toFixed(3);$("lengthIn").value=state.package.length.toFixed(3);$("widthIn").value=state.package.width.toFixed(3);$("heightIn").value=state.package.height.toFixed(3);updateManualUnitHints();persistState();refreshAll()}
+function readProductInputs(){
+  state.product.url=$("productUrl").value.trim();state.product.itemUsd=num($("clientAmount").value);state.product.domesticUsd=num($("domesticUsd").value);
+  state.package.weight=num($("weightLb").value);state.package.length=num($("lengthIn").value);state.package.width=num($("widthIn").value);state.package.height=num($("heightIn").value);
+  state.warehouse=$("warehouse").value;state.customsReserve=num($("customsReserve").value);state.peFeesUsd=num($("peFeesUsd").value);state.localDelivery=num($("localDelivery").value);
+  const manual=num($("visaRateManual").value);if(manual>=100)state.visaRate=manual;
+  if(state.shippingMode==="consolidation"){ensureConsolidationPackages();state.consolidationPackages[0]={...state.package}}
+  state.shippingRates=[];state.selectedRate=null;renderRates();syncManualUnitInputs();persistState();refreshAll()
+}
+function updateManualUnitHints(){
+  if(!$("manualWeightMetric"))return;
+  const metric=state.unitSystem==="metric";
+  $("manualWeightLabel").textContent=metric?"Poids kg":"Poids lb";
+  $("manualLengthLabel").textContent=metric?"L cm":"L in";$("manualWidthLabel").textContent=metric?"l cm":"l in";$("manualHeightLabel").textContent=metric?"H cm":"H in";
+  $("manualWeightMetric").textContent=metric?`(${fmtNumber(state.package.weight,2)} lb)`:`(${fmtNumber(lbToKg(state.package.weight),2)} kg)`;
+  $("manualLengthMetric").textContent=metric?`(${fmtNumber(state.package.length,1)} in)`:`(${fmtNumber(inToCm(state.package.length),1)} cm)`;
+  $("manualWidthMetric").textContent=metric?`(${fmtNumber(state.package.width,1)} in)`:`(${fmtNumber(inToCm(state.package.width),1)} cm)`;
+  $("manualHeightMetric").textContent=metric?`(${fmtNumber(state.package.height,1)} in)`:`(${fmtNumber(inToCm(state.package.height),1)} cm)`;
+}
+function syncManualUnitInputs(){
+  const metric=state.unitSystem==="metric";
+  $("manualWeightLb").value=(metric?lbToKg(state.package.weight):state.package.weight).toFixed(2);
+  $("manualLengthIn").value=(metric?inToCm(state.package.length):state.package.length).toFixed(1);
+  $("manualWidthIn").value=(metric?inToCm(state.package.width):state.package.width).toFixed(1);
+  $("manualHeightIn").value=(metric?inToCm(state.package.height):state.package.height).toFixed(1);
+  updateManualUnitHints();
+}
+function readManualUnitInputs(){
+  state.product.title=$("productTitleManual").value.trim();const metric=state.unitSystem==="metric";
+  const weight=num($("manualWeightLb").value),l=num($("manualLengthIn").value),w=num($("manualWidthIn").value),h=num($("manualHeightIn").value);
+  if(weight>0)state.package.weight=metric?kgToLb(weight):weight;if(l>0)state.package.length=metric?cmToIn(l):l;if(w>0)state.package.width=metric?cmToIn(w):w;if(h>0)state.package.height=metric?cmToIn(h):h;
+  $("weightLb").value=state.package.weight.toFixed(3);$("lengthIn").value=state.package.length.toFixed(3);$("widthIn").value=state.package.width.toFixed(3);$("heightIn").value=state.package.height.toFixed(3);
+  if(state.shippingMode==="consolidation"){ensureConsolidationPackages();state.consolidationPackages[0]={...state.package}}
+  state.shippingRates=[];state.selectedRate=null;renderRates();updateManualUnitHints();persistState();refreshAll()
+}
+function renderShippingControls(renderPackages=true){
+  $$("[data-unit-system]").forEach(b=>b.classList.toggle("active",b.dataset.unitSystem===state.unitSystem));
+  $$("[data-shipping-mode]").forEach(b=>b.classList.toggle("active",b.dataset.shippingMode===state.shippingMode));
+  $("consolidationPanel").hidden=state.shippingMode!=="consolidation";
+  $("itemPriceLabel").textContent=state.shippingMode==="consolidation"?"Prix total des articles":"Prix de l'article";
+  if(state.shippingMode==="consolidation"){
+    ensureConsolidationPackages();if(renderPackages)renderConsolidationPackages();
+    const pkg=estimateConsolidatedPackage();
+    $("consolidationEstimate").textContent=pkg?`Estimation consolidée : ${pkg.count} colis · ${fmtNumber(pkg.weight,2)} lb (${fmtNumber(lbToKg(pkg.weight),2)} kg) · ${fmtNumber(pkg.length,1)} × ${fmtNumber(pkg.width,1)} × ${fmtNumber(pkg.height,1)} in`:`Complète au moins 2 colis pour calculer l'envoi groupé.`;
+  }
+}
+function packageDisplayValue(value,type){
+  if(state.unitSystem==="us")return Number(value||0);
+  return type==="weight"?lbToKg(value||0):inToCm(value||0);
+}
+function packageUnit(type){return state.unitSystem==="us"?(type==="weight"?"lb":"in"):(type==="weight"?"kg":"cm")}
+function renderConsolidationPackages(){
+  ensureConsolidationPackages();const box=$("consolidationPackages");
+  box.innerHTML=state.consolidationPackages.slice(1).map((p,i)=>{const idx=i+1;return `<div class="consolidation-package" data-package-index="${idx}"><div class="consolidation-package-title"><strong>Colis ${idx+1}</strong>${state.consolidationPackages.length>2?`<button type="button" data-remove-package="${idx}">Retirer</button>`:""}</div><div class="mini-grid four"><label>Poids ${packageUnit("weight")}<input data-pkg-field="weight" type="number" min="0" step="0.01" value="${packageDisplayValue(p.weight,"weight")?packageDisplayValue(p.weight,"weight").toFixed(2):''}"></label><label>L ${packageUnit("length")}<input data-pkg-field="length" type="number" min="0" step="0.1" value="${packageDisplayValue(p.length,"length")?packageDisplayValue(p.length,"length").toFixed(1):''}"></label><label>l ${packageUnit("width")}<input data-pkg-field="width" type="number" min="0" step="0.1" value="${packageDisplayValue(p.width,"width")?packageDisplayValue(p.width,"width").toFixed(1):''}"></label><label>H ${packageUnit("height")}<input data-pkg-field="height" type="number" min="0" step="0.1" value="${packageDisplayValue(p.height,"height")?packageDisplayValue(p.height,"height").toFixed(1):''}"></label></div></div>`}).join("");
+}
+function setUnitSystem(mode){
+  if(!["us","metric"].includes(mode)||mode===state.unitSystem)return;state.unitSystem=mode;syncManualUnitInputs();renderConsolidationPackages();renderShippingControls(false);persistState()
+}
+function setShippingMode(mode){
+  if(!["single","consolidation"].includes(mode)||mode===state.shippingMode)return;state.shippingMode=mode;if(mode==="consolidation")ensureConsolidationPackages();state.shippingRates=[];state.selectedRate=null;renderRates();renderShippingControls(true);persistState();refreshAll();$("rateStatus").textContent=mode==="consolidation"?"Consolidation activée · complète les colis puis recalcule le transport":"Colis unique activé · recalcule le transport";$("statusDot").className="status-dot warn"
+}
+function readConsolidationPackageInput(target){
+  const row=target.closest("[data-package-index]");if(!row)return;const idx=Number(row.dataset.packageIndex),field=target.dataset.pkgField;if(!field||!state.consolidationPackages[idx])return;
+  const value=num(target.value);state.consolidationPackages[idx][field]=state.unitSystem==="metric"?(field==="weight"?kgToLb(value):cmToIn(value)):value;
+  state.shippingRates=[];state.selectedRate=null;persistState();renderShippingControls(false);refreshAll()
+}
 function syncAmountFromClient(){state.product.itemUsd=num($("clientAmount").value);$("internalAmount").value=fmtNumber(state.product.itemUsd,2);persistState();refreshAll()}
 function syncAmountFromInternal(){state.product.itemUsd=num($("internalAmount").value);$("clientAmount").value=fmtNumber(state.product.itemUsd,2);persistState();refreshAll()}
 
@@ -216,8 +311,13 @@ $$('[data-carrier]').forEach(b=>b.addEventListener('click',()=>{state.selectedCa
 $("topTransport").addEventListener("click",()=>{state.selectedCarrier=state.selectedCarrier==="DHL"?"FedEx":"DHL";state.selectedRate=bestRateForCarrier(state.selectedCarrier);persistState();refreshAll()});
 $("clientAmount").addEventListener("input",syncAmountFromClient);$("internalAmount").addEventListener("input",syncAmountFromInternal);
 ["productUrl","weightLb","lengthIn","widthIn","heightIn","warehouse","domesticUsd","customsReserve","peFeesUsd","localDelivery","visaRateManual"].forEach(id=>$(id).addEventListener("input",readProductInputs));
-["productTitleManual","manualWeightLb","manualLengthIn","manualWidthIn","manualHeightIn"].forEach(id=>$(id).addEventListener("input",readManualImperialInputs));
-$("manualShipping").addEventListener("click",async()=>{readManualImperialInputs();await refreshShipping()});
+["productTitleManual","manualWeightLb","manualLengthIn","manualWidthIn","manualHeightIn"].forEach(id=>$(id).addEventListener("input",readManualUnitInputs));
+$("manualShipping").addEventListener("click",async()=>{readManualUnitInputs();await refreshShipping()});
+$("unitSwitch").addEventListener("click",e=>{const b=e.target.closest("[data-unit-system]");if(b)setUnitSystem(b.dataset.unitSystem)});
+$("shippingModeSwitch").addEventListener("click",e=>{const b=e.target.closest("[data-shipping-mode]");if(b)setShippingMode(b.dataset.shippingMode)});
+$("addConsolidationPackage").addEventListener("click",()=>{ensureConsolidationPackages();state.consolidationPackages.push({weight:0,length:0,width:0,height:0});renderConsolidationPackages();renderShippingControls(false);persistState()});
+$("consolidationPackages").addEventListener("input",e=>{if(e.target.matches("[data-pkg-field]"))readConsolidationPackageInput(e.target)});
+$("consolidationPackages").addEventListener("click",e=>{const b=e.target.closest("[data-remove-package]");if(!b)return;const idx=Number(b.dataset.removePackage);if(state.consolidationPackages.length>2){state.consolidationPackages.splice(idx,1);state.shippingRates=[];state.selectedRate=null;renderRates();renderConsolidationPackages();renderShippingControls(false);persistState();refreshAll()}});
 $("analyzeProduct").addEventListener("click",analyzeProduct);$("refreshShipping").addEventListener("click",refreshShipping);$("refreshRates").addEventListener("click",()=>Promise.allSettled([refreshVisa(),refreshShipping()]));
 $("internalRates").addEventListener("click",e=>{const row=e.target.closest("[data-rate-id]");if(!row)return;const rate=state.shippingRates.find(r=>String(r.id)===row.dataset.rateId);if(rate){state.selectedRate=rate;state.selectedCarrier=rate.carrier;renderRates();persistState();refreshAll()}});
 $("openQuote").addEventListener("click",()=>openQuote());$("newQuoteTop").addEventListener("click",()=>openQuote());$("closeQuote").addEventListener("click",closeQuote);$("quoteSheet").addEventListener("click",e=>{if(e.target===$("quoteSheet"))closeQuote()});

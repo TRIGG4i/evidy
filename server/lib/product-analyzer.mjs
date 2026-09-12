@@ -259,26 +259,63 @@ const parsePrice = (html) => {
   return null;
 };
 
-const extractPhysical = (text) => {
-  const weightPatterns = [
-    /(?:package|shipping|item)\s*weight[^0-9]{0,30}([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b/i,
-    /weight[^0-9]{0,20}([0-9.]+)\s*(lb|lbs|pounds|oz|kg|g)\b/i
-  ];
-  let weightLb = null;
-  for (const p of weightPatterns) {
-    const m = text.match(p); if (!m) continue;
-    const v = Number(m[1]); const u = m[2].toLowerCase();
-    weightLb = u.startsWith('kg') ? v * 2.20462 : u === 'g' || u.startsWith('gram') ? v / 453.592 : u.startsWith('oz') ? v / 16 : v;
-    break;
-  }
-  const d = text.match(/(?:package|shipping)?\s*dimensions?[^0-9]{0,40}([0-9.]+)\s*[x×]\s*([0-9.]+)\s*[x×]\s*([0-9.]+)\s*(in|inch|inches|cm|centimeters?)\b/i);
-  let dimensionsIn = null;
-  if (d) {
-    const factor = d[4].toLowerCase().startsWith('cm') ? 1 / 2.54 : 1;
-    dimensionsIn = { length: Number(d[1]) * factor, width: Number(d[2]) * factor, height: Number(d[3]) * factor };
-  }
-  return { weightLb, dimensionsIn };
+const weightToLb = (value, unit) => {
+  const v = Number(value), u = String(unit || '').toLowerCase();
+  if (!Number.isFinite(v)) return null;
+  if (u.startsWith('kg')) return v * 2.2046226218;
+  if (u === 'g' || u.startsWith('gram')) return v / 453.59237;
+  if (u.startsWith('oz')) return v / 16;
+  return v;
 };
+
+const lengthToIn = (value, unit) => {
+  const v = Number(value), u = String(unit || '').toLowerCase();
+  if (!Number.isFinite(v)) return null;
+  if (u === 'mm' || u.startsWith('millimeter')) return v / 25.4;
+  if (u === 'cm' || u.startsWith('centimeter')) return v / 2.54;
+  return v;
+};
+
+const extractPhysical = (text) => {
+  const plain = String(text || '').replace(/\s+/g, ' ');
+  let weightLb = null, weightKind = null;
+
+  const weightPatterns = [
+    { kind: 'package', re: /(?:package|shipping)\s*weight[^0-9]{0,30}([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b(?:\s*\+\s*([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b)?/i },
+    { kind: 'item', re: /(?:net|item|product)?\s*weight[^0-9]{0,30}([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b(?:\s*\+\s*([0-9.]+)\s*(lb|lbs|pounds|oz|ounces|kg|kilograms|g|grams)\b)?/i }
+  ];
+  for (const { kind, re } of weightPatterns) {
+    const m = plain.match(re); if (!m) continue;
+    const first = weightToLb(m[1], m[2]);
+    const second = m[3] ? weightToLb(m[3], m[4]) : 0;
+    if (Number.isFinite(first)) {
+      weightLb = first + (Number.isFinite(second) ? second : 0);
+      weightKind = kind;
+      break;
+    }
+  }
+
+  let dimensionsIn = null, dimensionsKind = null;
+  const dimPatterns = [
+    { kind: 'package', re: /(?:package|shipping)\s*dimensions?[^0-9]{0,45}([0-9.]+)\s*(mm|cm|in|inch|inches)?\s*[x×]\s*([0-9.]+)\s*(mm|cm|in|inch|inches)?\s*[x×]\s*([0-9.]+)\s*(mm|cm|in|inch|inches)?\b/i },
+    { kind: 'item', re: /(?:product|item|overall)?\s*dimensions?[^0-9]{0,45}([0-9.]+)\s*(mm|cm|in|inch|inches)?\s*[x×]\s*([0-9.]+)\s*(mm|cm|in|inch|inches)?\s*[x×]\s*([0-9.]+)\s*(mm|cm|in|inch|inches)?\b/i }
+  ];
+  for (const { kind, re } of dimPatterns) {
+    const m = plain.match(re); if (!m) continue;
+    const fallbackUnit = m[6] || m[4] || m[2] || 'in';
+    const l = lengthToIn(m[1], m[2] || fallbackUnit);
+    const w = lengthToIn(m[3], m[4] || fallbackUnit);
+    const h = lengthToIn(m[5], m[6] || fallbackUnit);
+    if ([l,w,h].every(Number.isFinite)) {
+      dimensionsIn = { length:l, width:w, height:h };
+      dimensionsKind = kind;
+      break;
+    }
+  }
+  return { weightLb, dimensionsIn, weightKind, dimensionsKind };
+};
+
+export const parsePhysicalSpecs = extractPhysical;
 
 const HEURISTICS = [
   { category: 'earbuds', re: /airpods|earbuds|earphones|wireless buds/i, weight: 1.5, dims: [8, 6, 4] },
@@ -394,13 +431,22 @@ export const analyzeProductUrl = async (rawUrl) => {
   let estimate;
   const physicalVolume = physical.dimensionsIn ? physical.dimensionsIn.length * physical.dimensionsIn.width * physical.dimensionsIn.height : 0;
   const implausiblyTinyPackage = physicalVolume > 0 && physicalVolume < 20;
-  if (physical.weightLb && physical.dimensionsIn && !implausiblyTinyPackage) {
-    estimate = { category: heuristicEstimate(title).category, weightLb: physical.weightLb, dimensionsIn: physical.dimensionsIn, confidence: 0.95, source: 'page' };
+  const packedWeight = physical.weightLb ? (physical.weightKind === 'package' ? physical.weightLb : physical.weightLb * 1.08 + 0.5) : null;
+  const packedDimensions = physical.dimensionsIn && !implausiblyTinyPackage ? (
+    physical.dimensionsKind === 'package' ? physical.dimensionsIn : {
+      length: physical.dimensionsIn.length + 2,
+      width: physical.dimensionsIn.width + 2,
+      height: physical.dimensionsIn.height + 2
+    }
+  ) : null;
+  if (packedWeight && packedDimensions) {
+    const exactPackage = physical.weightKind === 'package' && physical.dimensionsKind === 'package';
+    estimate = { category: heuristicEstimate(title).category, weightLb: packedWeight, dimensionsIn: packedDimensions, confidence: exactPackage ? 0.95 : 0.80, source: exactPackage ? 'page-package-specs' : 'page-item-specs+packing-reserve' };
   } else {
     const ai = await aiEstimate({ title, description, extracted: physical });
     estimate = ai || heuristicEstimate(title);
-    if (physical.weightLb) { estimate.weightLb = physical.weightLb; estimate.confidence = Math.max(estimate.confidence, 0.72); estimate.source = `${estimate.source}+page-weight`; }
-    if (physical.dimensionsIn && !implausiblyTinyPackage) { estimate.dimensionsIn = physical.dimensionsIn; estimate.confidence = Math.max(estimate.confidence, 0.72); estimate.source = `${estimate.source}+page-dimensions`; }
+    if (packedWeight) { estimate.weightLb = packedWeight; estimate.confidence = Math.max(estimate.confidence, physical.weightKind === 'package' ? 0.86 : 0.74); estimate.source = `${estimate.source}+${physical.weightKind === 'package' ? 'package-weight' : 'item-weight-reserve'}`; }
+    if (packedDimensions) { estimate.dimensionsIn = packedDimensions; estimate.confidence = Math.max(estimate.confidence, physical.dimensionsKind === 'package' ? 0.86 : 0.74); estimate.source = `${estimate.source}+${physical.dimensionsKind === 'package' ? 'package-dimensions' : 'item-dimensions-reserve'}`; }
     if (source === 'search-index' && estimate.source === 'heuristic') estimate.source = 'search-index+heuristic';
   }
 
