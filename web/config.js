@@ -1,4 +1,3 @@
 window.EVIDY = Object.freeze({
-  apiBase: 'https://stolen-annotation-verification-admission.trycloudflare.com',
-  githubRepo: 'https://github.com/TRIGG4i/evidy'
+  apiBase: 'https://vmi3492066-1.tail1b7515.ts.net:8443'
 });
