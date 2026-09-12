@@ -149,6 +149,11 @@
           <div class="kpi profit"><span>Bénéfice eVidy</span><strong id="netProfit">—</strong></div>
           <div class="kpi"><span>Total client</span><strong id="internalClientTotal">—</strong></div>
         </div>
+        <div class="payment-plan-internal">
+          <div><span>Avance client 75 %</span><strong id="internalDeposit">—</strong></div>
+          <div><span>Solde à l'arrivée 25 %</span><strong id="internalBalance">—</strong></div>
+          <div class="payment-gap" id="paymentCoverage"><span>Couverture des coûts</span><strong>—</strong></div>
+        </div>
 
         <details class="disclosure" open>
           <summary><span>Colis & transport</span><svg class="icon sm"><use href="#i-chevron"/></svg></summary>
@@ -156,7 +161,7 @@
             <div class="mini-grid four">
               <label>Poids lb<input id="weightLb" type="number" step="0.01" min="0.01" value="2.5" /></label>
               <label>L in<input id="lengthIn" type="number" step="0.1" min="0.1" value="11" /></label>
-              <label>l in<input id="widthIn" type="number" step="0.1" min="0.1" value="9" /></label>
+              <label>W in<input id="widthIn" type="number" step="0.1" min="0.1" value="9" /></label>
               <label>H in<input id="heightIn" type="number" step="0.1" min="0.1" value="4" /></label>
             </div>
             <div class="mini-grid two second-row">
@@ -229,6 +234,10 @@
         <div class="preview-client"><span>Client</span><strong id="previewClient">Client non renseigné</strong></div>
         <div class="preview-table" id="previewTable"></div>
         <div class="preview-total"><span>Total à payer</span><strong id="previewTotal">—</strong></div>
+        <div class="preview-payment-plan">
+          <div><span>À la commande · 75 %</span><strong id="previewDeposit">—</strong></div>
+          <div><span>À l'arrivée du colis · 25 %</span><strong id="previewBalance">—</strong></div>
+        </div>
         <p class="preview-note" id="previewNote">Le prix comprend l'achat, l'acheminement et les frais de service applicables selon l'estimation actuelle du colis.</p>
       </article>
       <div class="sheet-actions">

@@ -32,19 +32,19 @@ const state={
   unitSystem:saved.unitSystem==="metric"?"metric":"us",
   shippingMode:saved.shippingMode==="consolidation"?"consolidation":"single",
   consolidationPackages:Array.isArray(saved.consolidationPackages)?saved.consolidationPackages.map(p=>({weight:Number(p.weight)||0,length:Number(p.length)||0,width:Number(p.width)||0,height:Number(p.height)||0,battery:Boolean(p.battery)})):[],
-  consolidatedEstimate:null,
+  consolidatedEstimate:saved.consolidatedEstimate&&typeof saved.consolidatedEstimate==="object"?saved.consolidatedEstimate:null,
   warehouse:String(saved.warehouse||"4"),
   customsReserve:Number(saved.customsReserve)||200000,
   peFeesUsd:Number(saved.peFeesUsd)||CONFIG.peDefaultFeeUSD,
   consolidationFeeUsd:Number.isFinite(Number(saved.consolidationFeeUsd))?Number(saved.consolidationFeeUsd):8,
   localDelivery:Number(saved.localDelivery)||0,
-  shippingRates:[],selectedRate:null,selectedCarrier:saved.selectedCarrier||"DHL",
+  shippingRates:Array.isArray(saved.shippingRates)?saved.shippingRates.filter(r=>r&&Number(r.rateUsd)>0):[],selectedRate:saved.selectedRate&&Number(saved.selectedRate.rateUsd)>0?saved.selectedRate:null,selectedCarrier:saved.selectedCarrier||"DHL",
   quotes:(()=>{try{return JSON.parse(localStorage.getItem("evidyQuotesV1")||"[]")}catch{return []}})(),
   editingQuoteId:null,editingQuoteBase:null,draftNumber:null,lastCalc:null
 };
 
 function persistState(){
-  try{localStorage.setItem("evidyStateV1",JSON.stringify({visaRate:state.visaRate,ratesDate:state.ratesDate,product:state.product,package:state.package,unitSystem:state.unitSystem,shippingMode:state.shippingMode,consolidationPackages:state.consolidationPackages,warehouse:state.warehouse,customsReserve:state.customsReserve,peFeesUsd:state.peFeesUsd,consolidationFeeUsd:state.consolidationFeeUsd,localDelivery:state.localDelivery,selectedCarrier:state.selectedCarrier}))}catch{}
+  try{localStorage.setItem("evidyStateV1",JSON.stringify({visaRate:state.visaRate,ratesDate:state.ratesDate,product:state.product,package:state.package,unitSystem:state.unitSystem,shippingMode:state.shippingMode,consolidationPackages:state.consolidationPackages,consolidatedEstimate:state.consolidatedEstimate,warehouse:state.warehouse,customsReserve:state.customsReserve,peFeesUsd:state.peFeesUsd,consolidationFeeUsd:state.consolidationFeeUsd,localDelivery:state.localDelivery,shippingRates:state.shippingRates,selectedRate:state.selectedRate,selectedCarrier:state.selectedCarrier}))}catch{}
 }
 function serviceRate(itemUsd){return itemUsd<=350?.30:itemUsd<=900?.25:.15}
 function serviceFeeMGA(itemUsd,domesticUsd,rate){
@@ -87,12 +87,17 @@ function calculate(){
   const total=roundUpTo(cost+service,1000),profit=total-cost;
   return{itemUsd:item,domesticUsd:domestic,visaRate:rate,shipping:ship,peFeesUsd:state.peFeesUsd,consolidationFeeUsd:consolidationFee,purchaseMga,freightMga,cardPurchase,cardFreight,cardFees:cardPurchase+cardFreight,reserve:state.customsReserve,localDelivery:state.localDelivery,serviceFee:service,cost,total,profit,rateTier:serviceRate(item),billable:billableWeight(),feesClient:Math.max(0,total-(item+domestic+ship.rateUsd)*rate)};
 }
+function paymentPlan(total,cost=0){
+  const safeTotal=Math.max(0,Math.round(Number(total)||0));
+  const deposit=Math.round(safeTotal*.75),balance=safeTotal-deposit,safeCost=Math.max(0,Math.round(Number(cost)||0));
+  return{depositPercent:75,balancePercent:25,deposit,balance,gap:Math.max(0,safeCost-deposit),coverage:deposit-safeCost};
+}
 
 function syncInputs(){
   $("productUrl").value=state.product.url; $("clientAmount").value=fmtNumber(state.product.itemUsd,2); $("internalAmount").value=fmtNumber(state.product.itemUsd,2);
   $("productTitleManual").value=state.product.title||""; $("manualBattery").checked=Boolean(state.package.battery);
   syncManualUnitInputs();
-  $("weightLb").value=state.package.weight; $("lengthIn").value=state.package.length; $("widthIn").value=state.package.width; $("heightIn").value=state.package.height;
+  $("weightLb").value=Number(state.package.weight).toFixed(2); $("lengthIn").value=Number(state.package.length).toFixed(2); $("widthIn").value=Number(state.package.width).toFixed(2); $("heightIn").value=Number(state.package.height).toFixed(2);
   $("warehouse").value=state.warehouse; $("domesticUsd").value=state.product.domesticUsd; $("customsReserve").value=state.customsReserve; $("peFeesUsd").value=state.peFeesUsd; $("consolidationFeeUsd").value=state.consolidationFeeUsd; $("localDelivery").value=state.localDelivery; $("visaRateManual").value=state.visaRate.toFixed(2);
   renderShippingControls();
 }
@@ -119,14 +124,16 @@ function refreshAll(){
   $$("[data-carrier]").forEach(b=>b.classList.toggle("active",b.dataset.carrier===state.selectedCarrier));
   if(!t){
     $("clientTotal").textContent=$("internalCost").textContent=$("netProfit").textContent=$("internalClientTotal").textContent="—";
+    $("internalDeposit").textContent=$("internalBalance").textContent="—";$("paymentCoverage").classList.remove("warn","ok");$("paymentCoverage").querySelector("strong").textContent="—";
     $("clientRateMeta").textContent=`1 USD = ${fmtNumber(state.visaRate,2)} MGA`;$("clientTransportMeta").textContent="À calculer";$("internalShipping").textContent="—";$("billableWeight").textContent=billableWeight()?`${billableWeight()} lb (${fmtNumber(lbToKg(billableWeight()),2)} kg)`:"—";return;
   }
   $("clientTotal").textContent=fmtNumber(t.total,0);$("clientRateMeta").textContent=`1 USD = ${fmtNumber(t.visaRate,2)} MGA`;$("clientTransportMeta").textContent=`${t.shipping.carrier} · ${fmtUSD(t.shipping.rateUsd)}`;
   $("internalCost").textContent=fmtNumber(t.cost,0);$("internalShipping").textContent=`${t.shipping.carrier} · ${fmtUSD(t.shipping.rateUsd)}`;$("billableWeight").textContent=`${t.billable} lb (${fmtNumber(lbToKg(t.billable),2)} kg)`;
   $("netProfit").textContent=fmtMGA(t.profit,0);$("internalClientTotal").textContent=fmtMGA(t.total,0);$("marginTier").textContent=`${fmtNumber(t.rateTier*100,0)} % · min. 75 000 Ar`;$("cardFees").textContent=fmtMGA(t.cardFees,0);$("reserveMeta").textContent=fmtMGA(t.reserve,0);
+  const pay=paymentPlan(t.total,t.cost);$("internalDeposit").textContent=fmtMGA(pay.deposit,0);$("internalBalance").textContent=fmtMGA(pay.balance,0);const coverage=$("paymentCoverage"),coverageText=coverage.querySelector("strong");coverage.classList.toggle("warn",pay.gap>0);coverage.classList.toggle("ok",pay.gap===0);coverageText.textContent=pay.gap>0?`eVidy avance ${fmtMGA(pay.gap,0)}`:`Coûts couverts + ${fmtMGA(Math.max(0,pay.coverage),0)}`;
   if($("quoteSheet").classList.contains("open")&&!state.editingQuoteId)renderDraftPreview();
 }
-function setView(view){state.view=view;$$('.view').forEach(v=>v.classList.toggle('active',v.id===view+'View'));$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===view));updateRateStrip()}
+function setView(view){state.view=view;$$('.view').forEach(v=>v.classList.toggle('active',v.id===view+'View'));$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===view));if(view==="internal")syncInputs();refreshAll();updateRateStrip()}
 
 function todayVisaDate(){const d=new Date();return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}/${d.getFullYear()}`}
 function normaliseVisaRate(n){if(!Number.isFinite(n)||n<=0)return NaN;if(n>=100&&n<=30000)return n;if(n>0&&n<.01){const inv=1/n;if(inv>=100&&inv<=30000)return inv}return NaN}
@@ -171,7 +178,7 @@ async function refreshShipping(){
       const preferred=batteryFedex||bestRateForCarrier(state.selectedCarrier)||state.shippingRates[0]||null;state.selectedRate=preferred;if(preferred)state.selectedCarrier=preferred.carrier;
       $("rateStatus").textContent=state.shippingRates.length?(state.package.largeBattery?"Tarifs indicatifs · batterie >100 Wh : validation transport obligatoire":state.package.battery?"Tarifs actualisés · restriction batterie à vérifier":"Tarifs transport actualisés"):"Aucun tarif disponible";$("statusDot").className=state.package.battery?"status-dot warn":(state.shippingRates.length?"status-dot":"status-dot warn");
     }
-  }catch(e){state.shippingRates=[];state.selectedRate=null;$("rateStatus").textContent=e.message||"Moteur transport indisponible";$("statusDot").className="status-dot warn"}
+  }catch(e){if(!state.shippingRates.length)state.selectedRate=null;$("rateStatus").textContent=state.shippingRates.length?"Actualisation transport indisponible · dernier tarif conservé":(e.message||"Moteur transport indisponible");$("statusDot").className="status-dot warn"}
   finally{button.disabled=false;button.innerHTML='<svg class="icon sm"><use href="#i-refresh"/></svg>Actualiser le transport';renderRates();persistState();refreshAll()}
 }
 async function analyzeProduct(){
@@ -220,8 +227,9 @@ function quotePackageSnapshot(t=calculate()){
 }
 function currentDraft(){
   const t=calculate(),base=state.editingQuoteBase;
-  if(base)return{...base,client:$("quoteClient").value.trim(),phone:$("quotePhone").value.trim(),validUntil:$("quoteValidity").value||defaultValidity(),note:$("quoteNote").value.trim()};
-  return{id:crypto.randomUUID?.()||`${Date.now()}-${Math.random()}`,number:state.draftNumber||nextQuoteNumber(),createdAt:isoDate(),validUntil:$("quoteValidity").value||defaultValidity(),client:$("quoteClient").value.trim(),phone:$("quotePhone").value.trim(),note:$("quoteNote").value.trim(),productTitle:state.product.title||"Article USA",productUrl:state.product.url,itemUsd:state.product.itemUsd,domesticUsd:state.product.domesticUsd,visaRate:state.visaRate,shippingCarrier:t?.shipping?.carrier||state.selectedCarrier,shippingService:t?.shipping?.service||"",shippingUsd:t?.shipping?.rateUsd||0,totalMGA:t?.total||0,feesClientMGA:t?.feesClient||0,...quotePackageSnapshot(t)};
+  if(base){const pay=paymentPlan(base.totalMGA);return{...base,depositPercent:75,balancePercent:25,depositMGA:pay.deposit,balanceMGA:pay.balance,client:$("quoteClient").value.trim(),phone:$("quotePhone").value.trim(),validUntil:$("quoteValidity").value||defaultValidity(),note:$("quoteNote").value.trim()}}
+  const total=t?.total||0,pay=paymentPlan(total);
+  return{id:crypto.randomUUID?.()||`${Date.now()}-${Math.random()}`,number:state.draftNumber||nextQuoteNumber(),createdAt:isoDate(),validUntil:$("quoteValidity").value||defaultValidity(),client:$("quoteClient").value.trim(),phone:$("quotePhone").value.trim(),note:$("quoteNote").value.trim(),productTitle:state.product.title||"Article USA",productUrl:state.product.url,itemUsd:state.product.itemUsd,domesticUsd:state.product.domesticUsd,visaRate:state.visaRate,shippingCarrier:t?.shipping?.carrier||state.selectedCarrier,shippingService:t?.shipping?.service||"",shippingUsd:t?.shipping?.rateUsd||0,totalMGA:total,feesClientMGA:t?.feesClient||0,depositPercent:75,balancePercent:25,depositMGA:pay.deposit,balanceMGA:pay.balance,...quotePackageSnapshot(t)};
 }
 function renderDraftPreview(){
   const q=currentDraft();
@@ -229,7 +237,7 @@ function renderDraftPreview(){
   const bill=Number(q.billableWeightKg)||billableWeight()*0.45359237;
   $("previewNumber").textContent=q.number;$("previewDate").textContent=`Émis le ${displayDate(q.createdAt)}`;$("previewClient").textContent=q.client||"Client non renseigné";
   $("previewTable").innerHTML=`<div class="preview-line"><div><span>Article</span><strong>${escapeHTML(q.productTitle||'Article USA')}</strong></div><strong>${escapeHTML(fmtUSD(q.itemUsd))}</strong></div><div class="preview-line"><div><span>Dimensions du colis</span><strong>Estimation</strong></div><strong>${escapeHTML(`${fmtNumber(l,1)} × ${fmtNumber(d,1)} × ${fmtNumber(h,1)} cm`)}</strong></div><div class="preview-line"><div><span>Poids approximatif</span><strong>Poids retenu pour le transport</strong></div><strong>${escapeHTML(fmtNumber(bill,2))} kg</strong></div><div class="preview-line"><div><span>Transport international</span><strong>${escapeHTML(`${q.shippingCarrier||''} ${q.shippingService||''}`.trim())}</strong></div><strong>${escapeHTML(fmtUSD(q.shippingUsd))}</strong></div><div class="preview-line"><div><span>Taux VISA</span><strong>1 USD</strong></div><strong>${escapeHTML(fmtNumber(q.visaRate,2))} MGA</strong></div><div class="preview-line"><div><span>Frais & traitement</span><strong>Frais applicables inclus</strong></div><strong>${escapeHTML(fmtMGA(q.feesClientMGA,0))}</strong></div>`;
-  $("previewTotal").textContent=fmtMGA(q.totalMGA,0);$("previewNote").textContent=q.note||"Le prix comprend l'achat, l'acheminement et les frais de service applicables. Dimensions et poids approximatif établis avant réception physique du colis.";
+  const pay=paymentPlan(q.totalMGA);$("previewTotal").textContent=fmtMGA(q.totalMGA,0);$("previewDeposit").textContent=fmtMGA(q.depositMGA||pay.deposit,0);$("previewBalance").textContent=fmtMGA(q.balanceMGA||pay.balance,0);$("previewNote").textContent=q.note||"Paiement en 2 tranches : 75 % à la commande et 25 % à l'arrivée du colis. Le prix comprend l'achat, l'acheminement et les frais de service applicables. Dimensions et poids approximatif établis avant réception physique du colis.";
 }
 function openQuote(q=null){
   if(q){state.editingQuoteId=q.id;state.editingQuoteBase={...q};state.draftNumber=q.number;$("quoteClient").value=q.client||"";$("quotePhone").value=q.phone||"";$("quoteValidity").value=q.validUntil||defaultValidity();$("quoteNote").value=q.note||"";$("quoteSheetTitle").textContent=`Devis ${q.number}`;$("deleteCurrentQuote").style.display="flex"}
@@ -241,7 +249,7 @@ function persistQuotes(){localStorage.setItem("evidyQuotesV1",JSON.stringify(sta
 function saveQuote(){const q=currentDraft();if(!(q.totalMGA>0)){ $("quoteSheetSub").textContent="Calcule d'abord un devis valide.";return }const i=state.quotes.findIndex(x=>x.id===q.id);if(i>=0)state.quotes[i]=q;else state.quotes.unshift(q);state.quotes=state.quotes.slice(0,100);persistQuotes();state.editingQuoteId=q.id;state.editingQuoteBase={...q};$("quoteSheetTitle").textContent=`Devis ${q.number}`;$("quoteSheetSub").textContent="Enregistré sur cet appareil";$("deleteCurrentQuote").style.display="flex";renderQuotes()}
 function renderQuotes(){const box=$("quotesContainer");if(!state.quotes.length){box.innerHTML='<div class="quotes-empty"><div class="empty-orb"><svg class="icon lg"><use href="#i-file"/></svg></div><h3>Aucun devis</h3><p>Crée un devis depuis le calcul client. Il apparaîtra ici pour être réouvert ou imprimé.</p><button class="secondary" data-new-quote><svg class="icon sm"><use href="#i-plus"/></svg>Nouveau devis</button></div>';return}box.innerHTML=`<div class="quote-list">${state.quotes.map(q=>`<div class="quote-item" data-open-quote="${escapeHTML(q.id)}"><div class="quote-icon"><svg class="icon"><use href="#i-file"/></svg></div><div class="quote-main"><strong>${escapeHTML(q.client||q.number)}</strong><span>${escapeHTML(q.number)} · ${escapeHTML(displayDate(q.createdAt))}</span></div><div class="quote-amount">${escapeHTML(fmtMGA(q.totalMGA,0))}</div></div>`).join("")}</div>`}
 function quoteText(q){
-  const l=Number(q.packageLengthCm)||state.package.length*2.54,d=Number(q.packageWidthCm)||state.package.width*2.54,h=Number(q.packageHeightCm)||state.package.height*2.54,bill=Number(q.billableWeightKg)||billableWeight()*0.45359237;
+  const l=Number(q.packageLengthCm)||state.package.length*2.54,d=Number(q.packageWidthCm)||state.package.width*2.54,h=Number(q.packageHeightCm)||state.package.height*2.54,bill=Number(q.billableWeightKg)||billableWeight()*0.45359237,pay=paymentPlan(q.totalMGA);
   return `DEVIS ${q.number}
 Client : ${q.client||"—"}${q.phone?`
 Téléphone : ${q.phone}`:""}
@@ -252,12 +260,14 @@ Poids approximatif : ${fmtNumber(bill,2)} kg
 Transport : ${q.shippingCarrier||"—"} ${q.shippingService||""} · ${fmtUSD(q.shippingUsd)}
 Taux VISA : 1 USD = ${fmtNumber(q.visaRate,2)} MGA
 Frais & traitement : ${fmtMGA(q.feesClientMGA,0)}
-TOTAL À PAYER : ${fmtMGA(q.totalMGA,0)}${q.note?`
+TOTAL À PAYER : ${fmtMGA(q.totalMGA,0)}
+1er paiement (75 %) à la commande : ${fmtMGA(q.depositMGA||pay.deposit,0)}
+Solde (25 %) à l'arrivée du colis : ${fmtMGA(q.balanceMGA||pay.balance,0)}${q.note?`
 Note : ${q.note}`:""}`}
 async function copyCurrentQuote(){const q=currentDraft();try{await navigator.clipboard.writeText(quoteText(q));$("quoteSheetSub").textContent="Devis copié dans le presse-papiers"}catch{$("quoteSheetSub").textContent="Copie indisponible sur ce navigateur"}}
 function renderPrint(q){
-  const l=Number(q.packageLengthCm)||state.package.length*2.54,d=Number(q.packageWidthCm)||state.package.width*2.54,h=Number(q.packageHeightCm)||state.package.height*2.54,bill=Number(q.billableWeightKg)||billableWeight()*0.45359237;
-  $("printStage").innerHTML=`<article class="print-page"><header class="print-head"><div class="print-brand"><img src="assets/evidy-mark.svg" style="width:42px;height:42px"><div><strong>eVidy US</strong><span>Devis d'achat assisté</span></div></div><div class="print-title"><h1>DEVIS</h1><p>${escapeHTML(q.number)} · ${escapeHTML(displayDate(q.createdAt))}</p></div></header><section class="print-client"><div class="print-block"><span>Client</span><strong>${escapeHTML(q.client||"Client non renseigné")}${q.phone?`<br>${escapeHTML(q.phone)}`:""}</strong></div></section><table class="print-table"><thead><tr><th>Description</th><th>Détail</th><th>Montant / mesure</th></tr></thead><tbody><tr><td>${escapeHTML(q.productTitle||"Article USA")}</td><td>Prix article</td><td>${escapeHTML(fmtUSD(q.itemUsd))}</td></tr><tr><td>Dimensions du colis</td><td>Estimation</td><td>${escapeHTML(`${fmtNumber(l,1)} × ${fmtNumber(d,1)} × ${fmtNumber(h,1)} cm`)}</td></tr><tr><td>Poids approximatif</td><td>Poids retenu pour le transport</td><td>${escapeHTML(fmtNumber(bill,2))} kg</td></tr><tr><td>Transport international</td><td>${escapeHTML(`${q.shippingCarrier||''} ${q.shippingService||''}`.trim())}</td><td>${escapeHTML(fmtUSD(q.shippingUsd))}</td></tr><tr><td>Taux VISA</td><td>1 USD</td><td>${escapeHTML(fmtNumber(q.visaRate,2))} MGA</td></tr><tr><td>Frais & traitement</td><td>Frais applicables inclus</td><td>${escapeHTML(fmtMGA(q.feesClientMGA,0))}</td></tr></tbody></table><div class="print-total"><span>Total à payer</span><strong>${escapeHTML(fmtMGA(q.totalMGA,0))}</strong></div>${q.note?`<p class="print-note"><strong>Note :</strong> ${escapeHTML(q.note)}</p>`:`<p class="print-note">Dimensions et poids approximatif établis avant réception physique du colis.</p>`}<footer class="print-footer"><span>eVidy US · Service opéré par PREST OFFICE</span><span>${escapeHTML(q.number)}</span></footer></article>`;
+  const l=Number(q.packageLengthCm)||state.package.length*2.54,d=Number(q.packageWidthCm)||state.package.width*2.54,h=Number(q.packageHeightCm)||state.package.height*2.54,bill=Number(q.billableWeightKg)||billableWeight()*0.45359237,pay=paymentPlan(q.totalMGA),deposit=q.depositMGA||pay.deposit,balance=q.balanceMGA||pay.balance;
+  $("printStage").innerHTML=`<article class="print-page"><header class="print-head"><div class="print-brand"><img src="assets/evidy-mark.svg" style="width:42px;height:42px"><div><strong>eVidy US</strong><span>Devis d'achat assisté</span></div></div><div class="print-title"><h1>DEVIS</h1><p>${escapeHTML(q.number)} · ${escapeHTML(displayDate(q.createdAt))}</p></div></header><section class="print-client"><div class="print-block"><span>Client</span><strong>${escapeHTML(q.client||"Client non renseigné")}${q.phone?`<br>${escapeHTML(q.phone)}`:""}</strong></div></section><table class="print-table"><thead><tr><th>Description</th><th>Détail</th><th>Montant / mesure</th></tr></thead><tbody><tr><td>${escapeHTML(q.productTitle||"Article USA")}</td><td>Prix article</td><td>${escapeHTML(fmtUSD(q.itemUsd))}</td></tr><tr><td>Dimensions du colis</td><td>Estimation</td><td>${escapeHTML(`${fmtNumber(l,1)} × ${fmtNumber(d,1)} × ${fmtNumber(h,1)} cm`)}</td></tr><tr><td>Poids approximatif</td><td>Poids retenu pour le transport</td><td>${escapeHTML(fmtNumber(bill,2))} kg</td></tr><tr><td>Transport international</td><td>${escapeHTML(`${q.shippingCarrier||''} ${q.shippingService||''}`.trim())}</td><td>${escapeHTML(fmtUSD(q.shippingUsd))}</td></tr><tr><td>Taux VISA</td><td>1 USD</td><td>${escapeHTML(fmtNumber(q.visaRate,2))} MGA</td></tr><tr><td>Frais & traitement</td><td>Frais applicables inclus</td><td>${escapeHTML(fmtMGA(q.feesClientMGA,0))}</td></tr></tbody></table><div class="print-total"><span>Total à payer</span><strong>${escapeHTML(fmtMGA(q.totalMGA,0))}</strong></div><div class="print-payments"><div><span>À la commande · 75 %</span><strong>${escapeHTML(fmtMGA(deposit,0))}</strong></div><div><span>À l'arrivée du colis · 25 %</span><strong>${escapeHTML(fmtMGA(balance,0))}</strong></div></div>${q.note?`<p class="print-note"><strong>Note :</strong> ${escapeHTML(q.note)}</p>`:`<p class="print-note">Paiement en 2 tranches : 75 % à la commande et 25 % à l'arrivée du colis. Dimensions et poids approximatif établis avant réception physique du colis.</p>`}<footer class="print-footer"><span>eVidy US · Service opéré par PREST OFFICE</span><span>${escapeHTML(q.number)}</span></footer></article>`;
 }
 function printAnyQuote(q){if(!q?.totalMGA)return;renderPrint(q);setTimeout(()=>window.print(),60)}
 function readProductInputs(){
@@ -272,7 +282,7 @@ function updateManualUnitHints(){
   if(!$("manualWeightMetric"))return;
   const metric=state.unitSystem==="metric";
   $("manualWeightLabel").textContent=metric?"Poids kg":"Poids lb";
-  $("manualLengthLabel").textContent=metric?"L cm":"L in";$("manualWidthLabel").textContent=metric?"l cm":"l in";$("manualHeightLabel").textContent=metric?"H cm":"H in";
+  $("manualLengthLabel").textContent=metric?"L cm":"L in";$("manualWidthLabel").textContent=metric?"W cm":"W in";$("manualHeightLabel").textContent=metric?"H cm":"H in";
   $("manualWeightMetric").textContent=metric?`(${fmtNumber(state.package.weight,2)} lb)`:`(${fmtNumber(lbToKg(state.package.weight),2)} kg)`;
   $("manualLengthMetric").textContent=metric?`(${fmtNumber(state.package.length,1)} in)`:`(${fmtNumber(inToCm(state.package.length),1)} cm)`;
   $("manualWidthMetric").textContent=metric?`(${fmtNumber(state.package.width,1)} in)`:`(${fmtNumber(inToCm(state.package.width),1)} cm)`;
@@ -290,7 +300,7 @@ function readManualUnitInputs(){
   state.product.title=$("productTitleManual").value.trim();state.package.battery=Boolean($("manualBattery").checked);const metric=state.unitSystem==="metric";
   const weight=num($("manualWeightLb").value),l=num($("manualLengthIn").value),w=num($("manualWidthIn").value),h=num($("manualHeightIn").value);
   if(weight>0)state.package.weight=metric?kgToLb(weight):weight;if(l>0)state.package.length=metric?cmToIn(l):l;if(w>0)state.package.width=metric?cmToIn(w):w;if(h>0)state.package.height=metric?cmToIn(h):h;
-  $("weightLb").value=state.package.weight.toFixed(3);$("lengthIn").value=state.package.length.toFixed(3);$("widthIn").value=state.package.width.toFixed(3);$("heightIn").value=state.package.height.toFixed(3);
+  $("weightLb").value=state.package.weight.toFixed(2);$("lengthIn").value=state.package.length.toFixed(2);$("widthIn").value=state.package.width.toFixed(2);$("heightIn").value=state.package.height.toFixed(2);
   if(state.shippingMode==="consolidation"){ensureConsolidationPackages();state.consolidationPackages[0]={...state.package}}
   state.consolidatedEstimate=null;
   state.shippingRates=[];state.selectedRate=null;renderRates();updateManualUnitHints();persistState();refreshAll()
@@ -313,7 +323,7 @@ function packageDisplayValue(value,type){
 function packageUnit(type){return state.unitSystem==="us"?(type==="weight"?"lb":"in"):(type==="weight"?"kg":"cm")}
 function renderConsolidationPackages(){
   ensureConsolidationPackages();const box=$("consolidationPackages");
-  box.innerHTML=state.consolidationPackages.slice(1).map((p,i)=>{const idx=i+1;return `<div class="consolidation-package" data-package-index="${idx}"><div class="consolidation-package-title"><strong>Colis ${idx+1}</strong><div class="package-title-actions"><label class="battery-check"><input data-pkg-field="battery" type="checkbox" ${p.battery?'checked':''}> Batterie</label>${state.consolidationPackages.length>2?`<button type="button" data-remove-package="${idx}">Retirer</button>`:""}</div></div><div class="mini-grid four"><label>Poids ${packageUnit("weight")}<input data-pkg-field="weight" type="number" min="0" step="0.01" value="${packageDisplayValue(p.weight,"weight")?packageDisplayValue(p.weight,"weight").toFixed(2):''}"></label><label>L ${packageUnit("length")}<input data-pkg-field="length" type="number" min="0" step="0.1" value="${packageDisplayValue(p.length,"length")?packageDisplayValue(p.length,"length").toFixed(1):''}"></label><label>l ${packageUnit("width")}<input data-pkg-field="width" type="number" min="0" step="0.1" value="${packageDisplayValue(p.width,"width")?packageDisplayValue(p.width,"width").toFixed(1):''}"></label><label>H ${packageUnit("height")}<input data-pkg-field="height" type="number" min="0" step="0.1" value="${packageDisplayValue(p.height,"height")?packageDisplayValue(p.height,"height").toFixed(1):''}"></label></div></div>`}).join("");
+  box.innerHTML=state.consolidationPackages.slice(1).map((p,i)=>{const idx=i+1;return `<div class="consolidation-package" data-package-index="${idx}"><div class="consolidation-package-title"><strong>Colis ${idx+1}</strong><div class="package-title-actions"><label class="battery-check"><input data-pkg-field="battery" type="checkbox" ${p.battery?'checked':''}> Batterie</label>${state.consolidationPackages.length>2?`<button type="button" data-remove-package="${idx}">Retirer</button>`:""}</div></div><div class="mini-grid four"><label>Poids ${packageUnit("weight")}<input data-pkg-field="weight" type="number" min="0" step="0.01" value="${packageDisplayValue(p.weight,"weight")?packageDisplayValue(p.weight,"weight").toFixed(2):''}"></label><label>L ${packageUnit("length")}<input data-pkg-field="length" type="number" min="0" step="0.1" value="${packageDisplayValue(p.length,"length")?packageDisplayValue(p.length,"length").toFixed(1):''}"></label><label>W ${packageUnit("width")}<input data-pkg-field="width" type="number" min="0" step="0.1" value="${packageDisplayValue(p.width,"width")?packageDisplayValue(p.width,"width").toFixed(1):''}"></label><label>H ${packageUnit("height")}<input data-pkg-field="height" type="number" min="0" step="0.1" value="${packageDisplayValue(p.height,"height")?packageDisplayValue(p.height,"height").toFixed(1):''}"></label></div></div>`}).join("");
 }
 function setUnitSystem(mode){
   if(!["us","metric"].includes(mode)||mode===state.unitSystem)return;state.unitSystem=mode;syncManualUnitInputs();renderConsolidationPackages();renderShippingControls(false);persistState()
