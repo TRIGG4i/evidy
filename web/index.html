@@ -182,8 +182,10 @@
               <label>Frais consolidation $<input id="consolidationFeeUsd" type="number" step="0.01" min="0" value="8" /></label>
               <label>Livraison client Ar<input id="localDelivery" type="number" step="1000" min="0" value="0" /></label>
               <label>Taux VISA<input id="visaRateManual" type="number" step="0.01" min="1000" /></label>
+              <label>Code HS probable<input id="hsCodeManual" type="text" inputmode="numeric" maxlength="10" placeholder="Auto après analyse" /></label>
             </div>
             <div class="detail-list">
+              <div class="detail-row"><span>Classification HS</span><strong id="hsCodeMeta">—</strong></div>
               <div class="detail-row"><span>Barème marge</span><strong id="marginTier">—</strong></div>
               <div class="detail-row"><span>Frais carte estimés</span><strong id="cardFees">—</strong></div>
               <div class="detail-row"><span>Réserve arrivée</span><strong id="reserveMeta">—</strong></div>

@@ -348,6 +348,55 @@ export const detectShippingFlags = (title, description='') => {
   return { battery, batteryWh, largeBattery };
 };
 
+const HS_RULES = [
+  { code:'85287200', confidence:.97, label:'Téléviseur couleur', re:/\b(tv|television|oled tv|qled tv|smart tv)\b/i },
+  { code:'85258000', confidence:.96, label:'Caméra / appareil photo numérique', re:/\b(camera|camcorder|dashcam|dash cam|dslr|mirrorless)\b/i },
+  { code:'85171300', confidence:.91, label:'Smartphone', re:/\b(iphone|smartphone|mobile phone|galaxy s\d|pixel \d)\b/i },
+  { code:'84713000', confidence:.88, label:'Ordinateur portable / tablette', re:/\b(macbook|laptop|notebook computer|ipad|tablet)\b/i },
+  { code:'85183000', confidence:.90, label:'Écouteurs / casque audio', re:/\b(airpods|earbuds|earphones|headphones|headset)\b/i },
+  { code:'95045000', confidence:.90, label:'Console de jeux vidéo', re:/\b(playstation|xbox|nintendo switch|gaming console)\b/i },
+  { code:'85285200', confidence:.82, label:'Moniteur informatique', re:/\b(computer monitor|gaming monitor|pc monitor)\b/i },
+  { code:'85076000', confidence:.68, label:'Batterie lithium-ion / station d’énergie portable', re:/\b(portable power station|solar generator|lifepo4 power station|ecoflow delta|jackery explorer|bluetti)\b/i },
+  { code:'95045000', confidence:.74, label:'Contrôleur de jeu / volant de simulation', re:/\b(racing wheel|steering wheel controller|trueforce racing|sim racing wheel)\b/i },
+  { code:'64039900', confidence:.72, label:'Chaussures', re:/\b(shoes|sneakers|trainers)\b/i }
+];
+
+const normalizeHsCode = (raw='') => {
+  const digits=String(raw).replace(/\D/g,'');
+  if(digits.length<6||digits.length>10)return null;
+  const chapter=Number(digits.slice(0,2));
+  if(chapter<1||chapter>97)return null;
+  return digits.length>=8?digits.slice(0,8):digits.slice(0,6);
+};
+
+const fetchHsIndexCandidate = async (title) => {
+  if(!title) return null;
+  const queries=[`"${title}" "HS code"`,`"${title}" harmonized tariff code`];
+  for(const query of queries){
+    try{
+      const searchUrl=`https://search.brave.com/search?q=${encodeURIComponent(query)}&source=web`;
+      const {stdout}=await execFileAsync('/usr/bin/curl',['-fsSL','--max-time','16','-A','Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36','-H','Accept-Language: en-US,en;q=0.9',searchUrl],{maxBuffer:1_500_000});
+      const plain=stripTags(String(stdout).slice(0,1_200_000));
+      const patterns=[
+        /(?:HS|H\.S\.|HTS|Harmonized(?:\s+System)?)(?:\s+code|\s+number|\s+classification)?[^0-9]{0,45}([0-9]{4}[.\s-]?[0-9]{2}(?:[.\s-]?[0-9]{2,4})?)/ig,
+        /(?:tariff code|commodity code)[^0-9]{0,45}([0-9]{4}[.\s-]?[0-9]{2}(?:[.\s-]?[0-9]{2,4})?)/ig
+      ];
+      const counts=new Map();
+      for(const re of patterns){for(const m of plain.matchAll(re)){const code=normalizeHsCode(m[1]);if(code)counts.set(code,(counts.get(code)||0)+1)}}
+      const ranked=[...counts.entries()].sort((a,b)=>b[1]-a[1]);
+      if(ranked.length){const [code,hits]=ranked[0];return{code,confidence:Math.min(.78,.56+hits*.06),label:'Classification web probable',source:'hs-search-index',evidenceCount:hits}}
+    }catch{}
+  }
+  return null;
+};
+
+export const inferHsCode = async ({title='',description=''}) => {
+  const text=`${title} ${description}`.trim();
+  const rule=HS_RULES.find(r=>r.re.test(text));
+  if(rule)return{code:rule.code,confidence:rule.confidence,label:rule.label,source:'rule'};
+  return await fetchHsIndexCandidate(title);
+};
+
 const HEURISTICS = [
   { category: 'earbuds', re: /airpods|earbuds|earphones|wireless buds/i, weight: 1.5, dims: [8, 6, 4] },
   { category: 'smartphone', re: /iphone|smartphone|galaxy s\d|pixel \d|mobile phone/i, weight: 2.5, dims: [11, 9, 4] },
@@ -488,6 +537,8 @@ export const analyzeProductUrl = async (rawUrl) => {
     if (source === 'search-index' && estimate.source === 'heuristic') estimate.source = 'search-index+heuristic';
   }
 
+  const hsClassification = await inferHsCode({ title, description: `${description} ${specIndex?.text || ''}` });
+
   return {
     url: finalUrl,
     hostname: finalHost,
@@ -505,6 +556,7 @@ export const analyzeProductUrl = async (rawUrl) => {
     packageEstimate: estimate,
     specSource: specIndex?.source || null,
     shippingFlags: detectShippingFlags(title, `${description} ${specIndex?.text || ''}`),
+    hsClassification,
     analyzedAt: new Date().toISOString()
   };
 };

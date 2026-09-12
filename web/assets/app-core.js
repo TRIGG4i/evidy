@@ -27,7 +27,7 @@ const state={
   view:"client",
   visaRate:Number(saved.visaRate)||CONFIG.fallbackVisaRate,
   ratesDate:saved.ratesDate||null,
-  product:{url:saved.product?.url||"",title:saved.product?.title||"",itemUsd:Number(saved.product?.itemUsd)||551.99,domesticUsd:Number(saved.product?.domesticUsd)||0},
+  product:{url:saved.product?.url||"",title:saved.product?.title||"",itemUsd:Number(saved.product?.itemUsd)||551.99,domesticUsd:Number(saved.product?.domesticUsd)||0,hsCode:saved.product?.hsCode||"",hsConfidence:Number(saved.product?.hsConfidence)||0,hsLabel:saved.product?.hsLabel||"",hsSource:saved.product?.hsSource||""},
   package:{weight:Number(saved.package?.weight)||2.5,length:Number(saved.package?.length)||11,width:Number(saved.package?.width)||9,height:Number(saved.package?.height)||4,source:saved.package?.source||"manuel",confidence:Number(saved.package?.confidence)||0,battery:Boolean(saved.package?.battery),batteryWh:Number(saved.package?.batteryWh)||null,largeBattery:Boolean(saved.package?.largeBattery)},
   unitSystem:saved.unitSystem==="metric"?"metric":"us",
   shippingMode:saved.shippingMode==="consolidation"?"consolidation":"single",
@@ -98,7 +98,7 @@ function syncInputs(){
   $("productTitleManual").value=state.product.title||""; $("manualBattery").checked=Boolean(state.package.battery);
   syncManualUnitInputs();
   $("weightLb").value=Number(state.package.weight).toFixed(2); $("lengthIn").value=Number(state.package.length).toFixed(2); $("widthIn").value=Number(state.package.width).toFixed(2); $("heightIn").value=Number(state.package.height).toFixed(2);
-  $("warehouse").value=state.warehouse; $("domesticUsd").value=state.product.domesticUsd; $("customsReserve").value=state.customsReserve; $("peFeesUsd").value=state.peFeesUsd; $("consolidationFeeUsd").value=state.consolidationFeeUsd; $("localDelivery").value=state.localDelivery; $("visaRateManual").value=state.visaRate.toFixed(2);
+  $("warehouse").value=state.warehouse; $("domesticUsd").value=state.product.domesticUsd; $("customsReserve").value=state.customsReserve; $("peFeesUsd").value=state.peFeesUsd; $("consolidationFeeUsd").value=state.consolidationFeeUsd; $("localDelivery").value=state.localDelivery; $("visaRateManual").value=state.visaRate.toFixed(2); $("hsCodeManual").value=state.product.hsCode||"";
   renderShippingControls();
 }
 function updateRateStrip(){
@@ -120,7 +120,7 @@ function refreshAll(){
   }else{
     $("clientPackageMeta").textContent="Complète au moins 2 colis";$("clientBillableMetric").textContent="—";
   }
-  updateManualUnitHints();renderShippingControls(false);
+  updateManualUnitHints();renderShippingControls(false);const hsMeta=$("hsCodeMeta");if(hsMeta)hsMeta.textContent=state.product.hsCode?`${state.product.hsCode}${state.product.hsConfidence?` · ${fmtNumber(state.product.hsConfidence*100,0)} %`:''}${state.product.hsLabel?` · ${state.product.hsLabel}`:''}`:"—";
   $$("[data-carrier]").forEach(b=>b.classList.toggle("active",b.dataset.carrier===state.selectedCarrier));
   if(!t){
     $("clientTotal").textContent=$("internalCost").textContent=$("netProfit").textContent=$("internalClientTotal").textContent="—";
@@ -187,6 +187,7 @@ async function analyzeProduct(){
   try{
     const data=await fetchJSON(`${CONFIG.apiBase}/api/analyze`,{method:"POST",body:JSON.stringify({url:state.product.url})},22000);
     if(data.title)state.product.title=data.title.replace(/\s*\|\s*eBay.*$/i,"");
+    if(data.hsClassification?.code){state.product.hsCode=String(data.hsClassification.code);state.product.hsConfidence=Number(data.hsClassification.confidence)||0;state.product.hsLabel=data.hsClassification.label||"";state.product.hsSource=data.hsClassification.source||"";}
     const basePrice=Number(data.priceUsd);
     const sellerShipping=(data.shippingUsd===null||data.shippingUsd===undefined)?NaN:Number(data.shippingUsd);
     const autoTotal=Number(data.totalPurchaseUsd);
@@ -337,6 +338,7 @@ function readConsolidationPackageInput(target){
   else {const value=num(target.value);state.consolidationPackages[idx][field]=state.unitSystem==="metric"?(field==="weight"?kgToLb(value):cmToIn(value)):value;}
   state.consolidatedEstimate=null;state.shippingRates=[];state.selectedRate=null;persistState();renderShippingControls(false);refreshAll()
 }
+function readHsManual(){state.product.hsCode=String($("hsCodeManual")?.value||"").replace(/\D/g,"").slice(0,10);state.product.hsConfidence=0;state.product.hsLabel=state.product.hsCode?"Saisi manuellement":"";state.product.hsSource=state.product.hsCode?"manual":"";persistState();refreshAll()}
 function syncAmountFromClient(){state.product.itemUsd=num($("clientAmount").value);$("internalAmount").value=fmtNumber(state.product.itemUsd,2);persistState();refreshAll()}
 function syncAmountFromInternal(){state.product.itemUsd=num($("internalAmount").value);$("clientAmount").value=fmtNumber(state.product.itemUsd,2);persistState();refreshAll()}
 
@@ -344,6 +346,7 @@ $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)
 $$('[data-carrier]').forEach(b=>b.addEventListener('click',()=>{state.selectedCarrier=b.dataset.carrier;state.selectedRate=bestRateForCarrier(state.selectedCarrier);persistState();refreshAll()}));
 $("topTransport").addEventListener("click",()=>{state.selectedCarrier=state.selectedCarrier==="DHL"?"FedEx":"DHL";state.selectedRate=bestRateForCarrier(state.selectedCarrier);persistState();refreshAll()});
 $("clientAmount").addEventListener("input",syncAmountFromClient);$("internalAmount").addEventListener("input",syncAmountFromInternal);
+$("hsCodeManual").addEventListener("input",readHsManual);
 ["productUrl","weightLb","lengthIn","widthIn","heightIn","warehouse","domesticUsd","customsReserve","peFeesUsd","consolidationFeeUsd","localDelivery","visaRateManual"].forEach(id=>$(id).addEventListener("input",readProductInputs));
 ["productTitleManual","manualWeightLb","manualLengthIn","manualWidthIn","manualHeightIn","manualBattery"].forEach(id=>$(id).addEventListener("input",readManualUnitInputs));
 $("manualShipping").addEventListener("click",async()=>{readManualUnitInputs();await refreshShipping()});
