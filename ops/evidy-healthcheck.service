@@ -1,0 +1,7 @@
+[Unit]
+Description=eVidy API and public funnel health check
+After=network-online.target evidy-api.service tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/evidy-healthcheck

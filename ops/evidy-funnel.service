@@ -1,0 +1,13 @@
+[Unit]
+Description=eVidy stable public HTTPS funnel
+After=network-online.target tailscaled.service evidy-api.service
+Wants=network-online.target
+Requires=tailscaled.service evidy-api.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/tailscale funnel --bg --https=8443 --yes 4280
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
