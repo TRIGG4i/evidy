@@ -53,6 +53,115 @@ const ebayItemId = (raw = '') => {
   return String(raw).match(/(?:\/itm\/(?:[^/]+\/)?|item(?:id)?[=%])(\d{9,15})/i)?.[1] || null;
 };
 
+const amazonAsin = (raw = '') => {
+  try {
+    const u = new URL(raw);
+    const m = u.pathname.match(/\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})(?:[/?]|$)/i);
+    if (m) return m[1].toUpperCase();
+  } catch {}
+  return String(raw).match(/(?:dp|gp\/product|product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null;
+};
+
+const AMAZON_US_FETCH_SCRIPT = String.raw`
+import sys,re,json,html,requests
+url=sys.argv[1]; zipcode=sys.argv[2] if len(sys.argv)>2 else "97062"
+ua="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36"
+h={"User-Agent":ua,"Accept-Language":"en-US,en;q=0.9"}
+s=requests.Session()
+r=s.get(url,headers=h,timeout=15)
+text=r.text
+m=re.search(r'id="nav-global-location-data-modal-action"[^>]*data-a-modal=([\'\"])(.*?)\1',text,re.I|re.S)
+if m:
+    try:
+        data=json.loads(html.unescape(m.group(2)))
+        token=data.get("ajaxHeaders",{}).get("anti-csrftoken-a2z")
+        if token:
+            hh=dict(h);hh.update({"anti-csrftoken-a2z":token,"X-Requested-With":"XMLHttpRequest","Origin":"https://www.amazon.com","Referer":url})
+            payload={"locationType":"LOCATION_INPUT","zipCode":zipcode,"storeContext":"generic","deviceType":"web","pageType":"Detail","actionSource":"glow","almBrandId":"undefined"}
+            s.post("https://www.amazon.com/gp/delivery/ajax/address-change.html",headers=hh,data=payload,timeout=15)
+    except Exception:
+        pass
+r=s.get(url,headers=h,timeout=15)
+sys.stdout.write(r.text)
+`;
+
+const fetchAmazonUsHtml = async (rawUrl, zipCode = '97062') => {
+  try {
+    const { stdout } = await execFileAsync('/usr/bin/python3', ['-c', AMAZON_US_FETCH_SCRIPT, rawUrl, zipCode], { maxBuffer: 4_000_000, timeout: 42000 });
+    const html = String(stdout || '');
+    return html.includes('productTitle') ? html.slice(0, 3_500_000) : null;
+  } catch {
+    return null;
+  }
+};
+
+const parseShippingUsd = (text = '') => {
+  const plain = stripTags(String(text));
+  if (/\b(?:free shipping|free delivery|shipping\s*[:\-]?\s*free)\b/i.test(plain)) return 0;
+  const patterns = [
+    /(?:shipping|delivery)[^$0-9]{0,35}\$\s*([0-9,]+(?:\.[0-9]{1,2})?)/i,
+    /\$\s*([0-9,]+(?:\.[0-9]{1,2})?)[^A-Za-z0-9]{0,12}(?:shipping|delivery)/i,
+    /\+\s*\$\s*([0-9,]+(?:\.[0-9]{1,2})?)[^A-Za-z0-9]{0,12}(?:shipping|delivery)/i
+  ];
+  for (const pattern of patterns) {
+    const m = plain.match(pattern);
+    if (m) return Number(m[1].replace(/,/g, ''));
+  }
+  return null;
+};
+
+const parseAmazonTitle = (html = '') => decode(
+  html.match(/<span[^>]+id=["']productTitle["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] ||
+  meta(html, 'og:title') ||
+  html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || ''
+).replace(/\s*:\s*Amazon\.com.*$/i, '').trim();
+
+const parseAmazonShippingUsd = (html = '') => {
+  for (const marker of ['id="deliveryBlock_feature_div"', 'id="deliveryBlockMessage"', 'id="mir-layout-DELIVERY_BLOCK"']) {
+    const at = html.indexOf(marker);
+    if (at >= 0) {
+      const block = html.slice(at, at + 26000);
+      const attr = block.match(/data-csa-c-delivery-price=["']([^"']+)["']/i)?.[1] || '';
+      if (/free/i.test(attr)) return 0;
+      const attrPrice = attr.match(/\$\s*([0-9,]+(?:\.[0-9]{1,2})?)/);
+      if (attrPrice) return Number(attrPrice[1].replace(/,/g, ''));
+      const parsed = parseShippingUsd(block);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+};
+
+const parseAmazonPrice = (html = '') => {
+  for (const marker of ['id="corePrice_feature_div"', 'id="corePrice_desktop"', 'id="priceInsideBuyBox_feature_div"', 'id="apex_desktop"']) {
+    const at = html.indexOf(marker);
+    if (at >= 0) {
+      const block = html.slice(at, at + 30000);
+      const m = block.match(/class=["'][^"']*a-offscreen[^"']*["'][^>]*>\s*\$\s*([0-9,]+(?:\.[0-9]{1,2})?)/i)
+        || block.match(/\$\s*([0-9,]+(?:\.[0-9]{1,2})?)/i);
+      if (m) {
+        const value = Number(m[1].replace(/,/g, ''));
+        if (Number.isFinite(value) && value > 0) return value;
+      }
+    }
+  }
+  const patterns = [
+    /id=["']priceblock_[^"']+["'][^>]*>[^$]{0,30}\$\s*([0-9,]+(?:\.[0-9]{1,2})?)/i,
+    /class=["'][^"']*a-offscreen[^"']*["'][^>]*>\s*\$\s*([0-9,]+(?:\.[0-9]{1,2})?)/i,
+    /["']priceAmount["']\s*:\s*["']?([0-9]+(?:\.[0-9]+)?)/i,
+    /["']price["']\s*:\s*["']\$?([0-9]+(?:\.[0-9]+)?)/i
+  ];
+  for (const pattern of patterns) {
+    const m = html.match(pattern);
+    if (m) {
+      const value = Number(m[1].replace(/,/g, ''));
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+  }
+  const fallback = parsePrice(html);
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : null;
+};
+
 
 const readProductCache = async () => {
   try { return JSON.parse(await readFile(CACHE_FILE, 'utf8')); } catch { return {}; }
@@ -70,7 +179,10 @@ const cacheEbayItem = async (itemId, entry) => {
   try {
     await mkdir(CACHE_DIR, { recursive: true });
     const cache = await readProductCache();
-    cache[itemId] = { title: entry.title, priceUsd: entry.priceUsd ?? null, description: entry.description || '', url: entry.url, cachedAt: Date.now() };
+    const previous = cache[itemId] || {};
+    const nextPrice = entry.priceUsd != null && Number(entry.priceUsd) > 0 ? Number(entry.priceUsd) : (previous.priceUsd ?? null);
+    const nextShipping = entry.shippingUsd != null && Number.isFinite(Number(entry.shippingUsd)) ? Number(entry.shippingUsd) : (previous.shippingUsd ?? null);
+    cache[itemId] = { title: entry.title || previous.title, priceUsd: nextPrice, shippingUsd: nextShipping, platform: entry.platform || previous.platform || 'ebay', description: entry.description || previous.description || '', url: entry.url || previous.url, cachedAt: Date.now() };
     await writeFile(CACHE_FILE, JSON.stringify(cache, null, 2));
   } catch {}
 };
@@ -112,10 +224,13 @@ const fetchEbaySearchIndex = async (itemId) => {
           || block.match(/US\s*\$\s*([0-9,]+(?:\.[0-9]{1,2})?)/i)
           || block.match(/\$\s*([0-9,]+(?:\.[0-9]{1,2})?)/i);
         const priceUsd = priceMatch ? Number(priceMatch[1].replace(/,/g, '')) : null;
+        const shippingUsd = parseShippingUsd(block);
         const review = block.match(/class="product-review[^>]*>([\s\S]*?)<div class="item-attributes/i)?.[1] || '';
         return {
           title,
           priceUsd: Number.isFinite(priceUsd) ? priceUsd : null,
+          shippingUsd: Number.isFinite(shippingUsd) ? shippingUsd : null,
+          platform: 'ebay',
           description: stripTags(review).slice(0, 1400),
           url: hrefNeedle,
           source: 'search-index',
@@ -166,6 +281,7 @@ const extractPhysical = (text) => {
 };
 
 const HEURISTICS = [
+  { category: 'earbuds', re: /airpods|earbuds|earphones|wireless buds/i, weight: 1.5, dims: [8, 6, 4] },
   { category: 'smartphone', re: /iphone|smartphone|galaxy s\d|pixel \d|mobile phone/i, weight: 2.5, dims: [11, 9, 4] },
   { category: 'tablet', re: /ipad|tablet/i, weight: 4, dims: [14, 11, 4] },
   { category: 'laptop', re: /macbook|laptop|notebook computer/i, weight: 9, dims: [19, 14, 6] },
@@ -225,39 +341,66 @@ export const analyzeProductUrl = async (rawUrl) => {
   const finalUrl = response?.url || url.toString();
   const finalHost = (() => { try { return new URL(finalUrl).hostname; } catch { return url.hostname; } })();
   const itemId = ebayItemId(finalUrl) || ebayItemId(url.toString());
+  const asin = amazonAsin(finalUrl) || amazonAsin(url.toString());
+  const isAmazon = /(^|\.)amazon\.com$/i.test(finalHost) || Boolean(asin);
 
-  let title = '', description = '', priceUsd = null, physical = { weightLb: null, dimensionsIn: null };
-  let source = 'page', warning = null;
+  let title = '', description = '', priceUsd = null, shippingUsd = null, physical = { weightLb: null, dimensionsIn: null };
+  let source = 'page', warning = null, platform = isAmazon ? 'amazon' : (itemId ? 'ebay' : 'web');
 
   if (response?.ok && (response.headers.get('content-type') || '').includes('text/html')) {
-    const html = (await response.text()).slice(0, 2_000_000);
+    let html = (await response.text()).slice(0, 2_000_000);
+    if (isAmazon) {
+      const localized = await fetchAmazonUsHtml(url.toString(), '97062');
+      if (localized) html = localized;
+    }
     const plain = stripTags(html);
-    title = meta(html, 'og:title') || (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ? decode(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)[1]) : '');
+    title = isAmazon ? parseAmazonTitle(html) : (meta(html, 'og:title') || (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ? decode(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)[1]) : ''));
     description = meta(html, 'og:description') || meta(html, 'description') || plain.slice(0, 5000);
-    priceUsd = parsePrice(html);
+    priceUsd = isAmazon ? parseAmazonPrice(html) : parsePrice(html);
+    shippingUsd = isAmazon ? parseAmazonShippingUsd(html) : parseShippingUsd(plain);
     physical = extractPhysical(plain);
   } else if (/ebay\./i.test(finalHost) || itemId) {
-    const indexed = await cachedEbayItem(itemId) || await fetchEbaySearchIndex(itemId);
+    const cached = await cachedEbayItem(itemId);
+    const fresh = (!cached || cached.shippingUsd == null) ? await fetchEbaySearchIndex(itemId) : null;
+    const indexed = cached && fresh ? {
+      ...cached,
+      ...fresh,
+      title: fresh.title || cached.title,
+      description: fresh.description || cached.description,
+      priceUsd: fresh.priceUsd != null && Number(fresh.priceUsd) > 0 ? Number(fresh.priceUsd) : cached.priceUsd,
+      shippingUsd: fresh.shippingUsd != null && Number.isFinite(Number(fresh.shippingUsd)) ? Number(fresh.shippingUsd) : cached.shippingUsd,
+      source: 'search-index'
+    } : (fresh || cached);
     if (!indexed) throw new Error(`eBay bloque l’analyse directe${response ? ` (HTTP ${response.status})` : ''} et aucun index exploitable n’a été trouvé.`);
     if (indexed.source === 'search-index') await cacheEbayItem(itemId, indexed);
     title = indexed.title;
     description = indexed.description;
     priceUsd = indexed.priceUsd;
+    shippingUsd = Number.isFinite(Number(indexed.shippingUsd)) ? Number(indexed.shippingUsd) : null;
+    platform = 'ebay';
     source = indexed.source;
     warning = indexed.warning;
+  } else if (isAmazon) {
+    throw new Error(`Amazon bloque l’analyse directe${response ? ` (HTTP ${response.status})` : ''}. Le prix et la livraison peuvent être saisis manuellement.`);
   } else {
     if (response && !response.ok) throw new Error(`Page produit HTTP ${response.status}`);
     throw directError || new Error('Page produit inaccessible');
   }
 
+  if (isAmazon && source === 'page' && !(Number.isFinite(priceUsd) && priceUsd > 0)) {
+    warning = 'Amazon a été reconnu, mais le prix ou la livraison n’est pas visible depuis le serveur. Vérifie ou complète le prix manuellement.';
+  }
+
   let estimate;
-  if (physical.weightLb && physical.dimensionsIn) {
+  const physicalVolume = physical.dimensionsIn ? physical.dimensionsIn.length * physical.dimensionsIn.width * physical.dimensionsIn.height : 0;
+  const implausiblyTinyPackage = physicalVolume > 0 && physicalVolume < 20;
+  if (physical.weightLb && physical.dimensionsIn && !implausiblyTinyPackage) {
     estimate = { category: heuristicEstimate(title).category, weightLb: physical.weightLb, dimensionsIn: physical.dimensionsIn, confidence: 0.95, source: 'page' };
   } else {
     const ai = await aiEstimate({ title, description, extracted: physical });
     estimate = ai || heuristicEstimate(title);
     if (physical.weightLb) { estimate.weightLb = physical.weightLb; estimate.confidence = Math.max(estimate.confidence, 0.72); estimate.source = `${estimate.source}+page-weight`; }
-    if (physical.dimensionsIn) { estimate.dimensionsIn = physical.dimensionsIn; estimate.confidence = Math.max(estimate.confidence, 0.72); estimate.source = `${estimate.source}+page-dimensions`; }
+    if (physical.dimensionsIn && !implausiblyTinyPackage) { estimate.dimensionsIn = physical.dimensionsIn; estimate.confidence = Math.max(estimate.confidence, 0.72); estimate.source = `${estimate.source}+page-dimensions`; }
     if (source === 'search-index' && estimate.source === 'heuristic') estimate.source = 'search-index+heuristic';
   }
 
@@ -266,10 +409,14 @@ export const analyzeProductUrl = async (rawUrl) => {
     hostname: finalHost,
     source,
     warning,
+    platform,
     title,
     description: description.slice(0, 900),
     priceUsd,
-    priceReliability: source === 'page' ? 'direct' : 'indexed-verify',
+    shippingUsd,
+    totalPurchaseUsd: Number.isFinite(priceUsd) && priceUsd > 0 ? Number((priceUsd + (Number.isFinite(shippingUsd) ? shippingUsd : 0)).toFixed(2)) : null,
+    shippingReliability: Number.isFinite(shippingUsd) ? (source === 'page' ? 'direct' : 'indexed-verify') : 'unknown',
+    priceReliability: Number.isFinite(priceUsd) && priceUsd > 0 ? (source === 'page' ? 'direct' : 'indexed-verify') : 'unknown',
     extracted: physical,
     packageEstimate: estimate,
     analyzedAt: new Date().toISOString()

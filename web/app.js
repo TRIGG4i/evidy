@@ -216,7 +216,7 @@ async function loadRates() {
       weight: number('weightLb'), length: number('lengthIn'), width: number('widthIn'), height: number('heightIn'),
       value: number('declaredValue', number('itemUsd'))
     };
-    const data = await fetchJson(api('/api/planetexpress'), { method:'POST', body:JSON.stringify(payload) }, 22000);
+    const data = await fetchJson(api('/api/shipping-rates'), { method:'POST', body:JSON.stringify(payload) }, 22000);
     state.rates = (data.carriers || []).filter((c) => ['DHL','FedEx'].includes(c.carrier));
     state.selectedRate = state.rates.find((c) => c.carrier === 'DHL') || state.rates[0] || null;
     renderRates();
@@ -233,7 +233,7 @@ function localQuote() {
   const item = Math.max(0, number('itemUsd'));
   const domestic = Math.max(0, number('domesticUsd'));
   const shipping = number('manualShippingUsd') > 0 ? number('manualShippingUsd') : Number(state.selectedRate?.rateUsd || 0);
-  if (!shipping) throw new Error('Chargez un tarif Planet Express ou saisissez le transport manuel.');
+  if (!shipping) throw new Error('Chargez un tarif transport ou saisissez le transport manuel.');
   const rate = number('visaRate'); if (rate < 1000) throw new Error('Saisissez le taux VISA USD → MGA.');
   const peFees = Math.max(0, number('peFeesUsd'));
   const purchaseMga = (item + domestic) * rate;
@@ -248,7 +248,7 @@ function localQuote() {
   const local = Math.max(0, number('localDelivery'));
   const purchaseCard = card(purchaseMga), freightCard = card(freightMga);
   const total = Math.round(purchaseMga + freightMga + purchaseCard + freightCard + customs + local + service);
-  return { itemUsd:item, domesticShippingUsd:domestic, purchaseMga:Math.round(purchaseMga), internationalShippingUsd:shipping, planetExpressFeesUsd:peFees, freightMga:Math.round(freightMga), purchaseCardFeeMga:purchaseCard, freightCardFeeMga:freightCard, customsReserveMga:customs, localDeliveryMga:local, serviceFeeMga:service, serviceRate:tier, visaRate:rate, totalMga:total };
+  return { itemUsd:item, domesticShippingUsd:domestic, purchaseMga:Math.round(purchaseMga), internationalShippingUsd:shipping, logisticsFeesUsd:peFees, freightMga:Math.round(freightMga), purchaseCardFeeMga:purchaseCard, freightCardFeeMga:freightCard, customsReserveMga:customs, localDeliveryMga:local, serviceFeeMga:service, serviceRate:tier, visaRate:rate, totalMga:total };
 }
 
 function renderQuote(q) {
@@ -283,7 +283,7 @@ async function copyQuote() {
     `${transportName} : ${fmtUSD(q.internationalShippingUsd)}`,
     `Prix tout compris estimé : ${fmtMGA(q.totalMga)}`,
     `Livraison : Madagascar`,
-    `Devis établi sur une estimation du colis avant réception chez Planet Express.`
+    `Devis établi sur une estimation du colis avant réception physique.`
   ].join('\n');
   try { await navigator.clipboard.writeText(text); $('copyBtn').textContent = 'Devis copié'; setTimeout(() => $('copyBtn').textContent = 'Copier le devis', 1600); }
   catch { $('copyBtn').textContent = 'Copie impossible'; setTimeout(() => $('copyBtn').textContent = 'Copier le devis', 1600); }

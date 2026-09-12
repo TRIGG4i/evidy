@@ -56,7 +56,7 @@
         <div class="field-label"><span>Lien du produit</span><span>Optionnel</span></div>
         <div class="link-box">
           <svg class="icon sm"><use href="#i-link"/></svg>
-          <input id="productUrl" type="url" inputmode="url" placeholder="ebay.com/itm/…" autocomplete="off" />
+          <input id="productUrl" type="url" inputmode="url" placeholder="ebay.com ou amazon.com/…" autocomplete="off" />
           <button id="analyzeProduct" type="button">Analyser</button>
         </div>
 
@@ -67,7 +67,7 @@
         </div>
 
         <div class="segment-wrap">
-          <div class="field-label"><span>Transport</span><span id="carrierHint">Tarif Planet Express</span></div>
+          <div class="field-label"><span>Transport</span><span id="carrierHint">Tarif transport</span></div>
           <div class="segmented" id="carrierSegments">
             <button class="segment active" data-carrier="DHL">DHL</button>
             <button class="segment" data-carrier="FedEx">FedEx</button>
@@ -134,7 +134,7 @@
         </div>
 
         <details class="disclosure" open>
-          <summary><span>Colis & Planet Express</span><svg class="icon sm"><use href="#i-chevron"/></svg></summary>
+          <summary><span>Colis & transport</span><svg class="icon sm"><use href="#i-chevron"/></svg></summary>
           <div class="disc-body">
             <div class="mini-grid four">
               <label>Poids lb<input id="weightLb" type="number" step="0.01" min="0.01" value="2.5" /></label>
@@ -146,7 +146,7 @@
               <label>Entrepôt<select id="warehouse"><option value="4">Tualatin, OR</option><option value="6">Torrance, CA</option></select></label>
               <label>Livraison vendeur $<input id="domesticUsd" type="number" step="0.01" min="0" value="0" /></label>
             </div>
-            <button class="secondary internal-action" id="refreshShipping" type="button"><svg class="icon sm"><use href="#i-refresh"/></svg>Actualiser Planet Express</button>
+            <button class="secondary internal-action" id="refreshShipping" type="button"><svg class="icon sm"><use href="#i-refresh"/></svg>Actualiser le transport</button>
             <div class="rate-list" id="internalRates"></div>
           </div>
         </details>
@@ -156,7 +156,7 @@
           <div class="disc-body">
             <div class="mini-grid two">
               <label>Réserve arrivée Ar<input id="customsReserve" type="number" step="1000" min="0" value="200000" /></label>
-              <label>Frais Planet Express $<input id="peFeesUsd" type="number" step="0.01" min="0" value="5" /></label>
+              <label>Frais logistiques $<input id="peFeesUsd" type="number" step="0.01" min="0" value="5" /></label>
               <label>Livraison client Ar<input id="localDelivery" type="number" step="1000" min="0" value="0" /></label>
               <label>Taux VISA<input id="visaRateManual" type="number" step="0.01" min="1000" /></label>
             </div>

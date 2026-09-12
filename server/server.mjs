@@ -115,7 +115,7 @@ const server = http.createServer(async (req, res) => {
       const result = await analyzeProductUrl(body.url);
       json(res, 200, result, headers); return;
     }
-    if (req.method === 'POST' && url.pathname === '/api/planetexpress') {
+    if (req.method === 'POST' && (url.pathname === '/api/shipping-rates' || url.pathname === '/api/planetexpress')) {
       const body = await readBody(req);
       const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 16000);
       try {
