@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f4f5f7" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="application-name" content="eVidy US" />
+  <meta name="apple-mobile-web-app-title" content="eVidy US" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="icon" href="assets/evidy-mark.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/evidy-192.png" />
+  <link rel="manifest" href="manifest.webmanifest?v=20260913-quotehs1" />
+  <script>try{const t=localStorage.getItem("epayInterfaceTheme");if(t==="dark")document.documentElement.dataset.theme="dark"}catch{}</script>
+  <title>eVidy US — Devis</title>
+  <link rel="stylesheet" href="assets/app.css?v=20260913-quotehs1" />
+  <link rel="stylesheet" href="assets/evidy-overrides.css?v=20260913-quotehs1" />
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5"/><path d="M19 12a7.5 7.5 0 1 1-2.2-5.3L20 9"/></symbol>
+    <symbol id="i-calculator" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 7.5A3.5 3.5 0 0 1 7.5 4H18a2 2 0 0 1 2 2v14H7a3 3 0 0 1-3-3V7.5Z"/><path d="M4 8h14M16 12h4v4h-4a2 2 0 0 1 0-4Z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V4h10v5M7 17h10v4H7z"/><path d="M6 17H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></symbol>
+  </svg>
+
+  <main class="app-shell">
+    <div class="sticky-head">
+      <header class="topbar">
+        <div class="brand-wrap">
+          <img class="brand-mark" src="assets/evidy-mark.svg" alt="eVidy US" />
+          <div class="brand-copy"><strong>eVidy US</strong><span>Achats USA · Madagascar</span></div>
+        </div>
+        <button class="icon-button" id="refreshRates" aria-label="Actualiser les taux" title="Actualiser les taux">
+          <svg class="icon sm"><use href="#i-refresh"/></svg><span class="rate-dot" id="rateDot"></span>
+        </button>
+      </header>
+      <section class="rate-switch" aria-label="Références du devis">
+        <button class="rate-option active" type="button"><span class="rate-code"><span class="currency-dot usd"></span>USD</span><span class="rate-number" id="rateUSD">—</span></button>
+        <button class="rate-option" id="topTransport" type="button"><span class="rate-code">Transport</span><span class="rate-number" id="transportTop">—</span></button>
+      </section>
+    </div>
+
+    <section class="view active" id="clientView">
+      <div class="section-eyebrow">Calcul client</div>
+      <section class="card">
+        <div class="card-head"><div><h2>Nouveau devis</h2><p>Achat aux États-Unis, livré à Madagascar</p></div><span class="chip">Frais inclus</span></div>
+
+        <div class="field-label"><span>Lien du produit</span><span>Optionnel</span></div>
+        <div class="link-box">
+          <svg class="icon sm"><use href="#i-link"/></svg>
+          <input id="productUrl" type="url" inputmode="url" placeholder="ebay.com ou amazon.com/…" autocomplete="off" />
+          <button id="analyzeProduct" type="button" title="Analyse assistée par Google Gemini"><img class="gemini-mark" src="assets/gemini-sparkle.svg" alt="" /><span>Analyser</span><span class="gemini-badge">Gemini</span></button>
+        </div>
+
+        <div class="field-label amount-label"><span id="itemPriceLabel">Prix de l'article</span><span>USD</span></div>
+        <div class="amount-box">
+          <div class="amount-currency"><span class="currency-dot usd"></span><span>USD</span></div>
+          <input id="clientAmount" class="amount-input" type="text" inputmode="decimal" autocomplete="off" value="551.99" aria-label="Prix de l'article" />
+        </div>
+
+        <div class="segment-wrap">
+          <div class="field-label"><span>Transport</span><span id="carrierHint">Tarif transport</span></div>
+          <div class="segmented" id="carrierSegments">
+            <button class="segment active" data-carrier="DHL">DHL</button>
+            <button class="segment" data-carrier="FedEx">FedEx</button>
+          </div>
+        </div>
+
+        <div class="result-card">
+          <div class="result-label">Total estimatif</div>
+          <div class="result-total"><strong id="clientTotal">—</strong><span>MGA</span></div>
+          <div class="result-meta">
+            <div class="meta-item"><span>Taux VISA</span><strong id="clientRateMeta">—</strong></div>
+            <div class="meta-item"><span>Transport</span><strong id="clientTransportMeta">—</strong></div>
+          </div>
+          <button class="primary" id="openQuote"><svg class="icon sm"><use href="#i-file"/></svg>Créer un devis</button>
+        </div>
+
+        <div class="inline-status"><span class="status-dot" id="statusDot"></span><span id="rateStatus">Initialisation…</span></div>
+
+        <details class="disclosure" id="productDisclosure">
+          <summary><span>Détails / saisie manuelle</span><svg class="icon sm"><use href="#i-chevron"/></svg></summary>
+          <div class="disc-body">
+            <div class="manual-product-grid">
+              <label>Nom de l'article<input id="productTitleManual" type="text" placeholder="Ex. iPhone 14 Pro Max 512 Go" /></label>
+              <label class="battery-check main-battery"><input id="manualBattery" type="checkbox" /> Batterie / power station</label>
+            </div>
+            <div class="manual-toolbar">
+              <div class="mini-segment unit-switch" id="unitSwitch" aria-label="Système d’unités">
+                <button type="button" data-unit-system="us" class="active">US</button>
+                <button type="button" data-unit-system="metric">International</button>
+              </div>
+              <div class="mini-segment shipping-mode-switch" id="shippingModeSwitch" aria-label="Mode d’envoi">
+                <button type="button" data-shipping-mode="single" class="active">1 colis</button>
+                <button type="button" data-shipping-mode="consolidation">Consolidation</button>
+              </div>
+            </div>
+            <div class="mini-grid four imperial-grid">
+              <label><span id="manualWeightLabel">Poids lb</span> <span class="unit-secondary" id="manualWeightMetric">(— kg)</span><input id="manualWeightLb" type="number" step="0.01" min="0.01" /></label>
+              <label><span id="manualLengthLabel">L in</span> <span class="unit-secondary" id="manualLengthMetric">(— cm)</span><input id="manualLengthIn" type="number" step="0.1" min="0.1" /></label>
+              <label><span id="manualWidthLabel">l in</span> <span class="unit-secondary" id="manualWidthMetric">(— cm)</span><input id="manualWidthIn" type="number" step="0.1" min="0.1" /></label>
+              <label><span id="manualHeightLabel">H in</span> <span class="unit-secondary" id="manualHeightMetric">(— cm)</span><input id="manualHeightIn" type="number" step="0.1" min="0.1" /></label>
+            </div>
+            <div id="consolidationPanel" class="consolidation-panel" hidden>
+              <div class="consolidation-head"><div><strong>Articles à consolider</strong><span>Chaque article garde son prix, son HS et ses données colis. Un seul transport international sera calculé.</span></div><button type="button" id="addConsolidationPackage">+ Ajouter l’article</button></div>
+              <div id="consolidationPackages" class="consolidation-packages"></div>
+              <div class="consolidation-note" id="consolidationEstimate">Estimation consolidée : —</div>
+            </div>
+            <button class="secondary manual-shipping-action" id="manualShipping" type="button"><svg class="icon sm"><use href="#i-refresh"/></svg>Calculer le transport</button>
+            <div class="detail-list compact-details">
+              <div class="detail-row"><span>Colis</span><strong id="clientPackageMeta">—</strong></div>
+              <div class="detail-row"><span>Poids facturable</span><strong id="clientBillableMetric">—</strong></div>
+            </div>
+          </div>
+        </details>
+      </section>
+    </section>
+
+    <section class="view" id="internalView">
+      <div class="section-eyebrow">Calcul interne</div>
+      <section class="card">
+        <div class="card-head"><div><h2>Coût & marge</h2><p>Vue privée eVidy</p></div><span class="chip">Interne</span></div>
+
+        <div class="field-label"><span>Prix article</span><span>USD</span></div>
+        <div class="amount-box">
+          <div class="amount-currency"><span class="currency-dot usd"></span><span>USD</span></div>
+          <input id="internalAmount" class="amount-input" type="text" inputmode="decimal" autocomplete="off" value="551.99" aria-label="Prix article interne" />
+        </div>
+
+        <div class="result-card">
+          <div class="result-label">Coût estimé eVidy</div>
+          <div class="result-total"><strong id="internalCost">—</strong><span>MGA</span></div>
+          <div class="result-meta">
+            <div class="meta-item"><span>Transport</span><strong id="internalShipping">—</strong></div>
+            <div class="meta-item"><span>Poids facturable</span><strong id="billableWeight">—</strong></div>
+          </div>
+        </div>
+
+        <div class="profit-row">
+          <div class="kpi profit"><span>Bénéfice eVidy</span><strong id="netProfit">—</strong></div>
+          <div class="kpi"><span>Total client</span><strong id="internalClientTotal">—</strong></div>
+        </div>
+        <div class="payment-plan-internal">
+          <div><span id="internalDepositLabel">Avance client</span><strong id="internalDeposit">—</strong></div>
+          <div><span id="internalBalanceLabel">Solde à l'arrivée</span><strong id="internalBalance">—</strong></div>
+          <div class="payment-gap" id="paymentCoverage"><span>Couverture des coûts</span><strong>—</strong></div>
+        </div>
+
+        <details class="disclosure" open>
+          <summary><span>Colis & transport</span><svg class="icon sm"><use href="#i-chevron"/></svg></summary>
+          <div class="disc-body">
+            <div class="mini-grid four">
+              <label>Poids lb<input id="weightLb" type="number" step="0.01" min="0.01" value="2.5" /></label>
+              <label>L in<input id="lengthIn" type="number" step="0.1" min="0.1" value="11" /></label>
+              <label>W in<input id="widthIn" type="number" step="0.1" min="0.1" value="9" /></label>
+              <label>H in<input id="heightIn" type="number" step="0.1" min="0.1" value="4" /></label>
+            </div>
+            <div class="mini-grid two second-row">
+              <label>Entrepôt<select id="warehouse"><option value="4">Tualatin, OR</option><option value="6">Torrance, CA</option></select></label>
+              <label>Livraison vendeur $<input id="domesticUsd" type="number" step="0.01" min="0" value="0" /></label>
+            </div>
+            <button class="secondary internal-action" id="refreshShipping" type="button"><svg class="icon sm"><use href="#i-refresh"/></svg>Actualiser le transport</button>
+            <div class="rate-list" id="internalRates"></div>
+          </div>
+        </details>
+
+        <details class="disclosure">
+          <summary><span>Paramètres internes</span><svg class="icon sm"><use href="#i-chevron"/></svg></summary>
+          <div class="disc-body">
+            <div class="mini-grid two">
+              <label>Objectif négociation Ar<input id="customsReserve" type="number" step="1000" min="0" value="200000" readonly /></label>
+              <label>Dédouanement réel Ar<input id="customsActual" type="number" step="1000" min="0" placeholder="À renseigner à l’arrivée" /></label>
+              <label>Frais logistiques $<input id="peFeesUsd" type="number" step="0.01" min="0" value="5" /></label>
+              <label>Frais consolidation $<input id="consolidationFeeUsd" type="number" step="0.01" min="0" value="8" /></label>
+              <label>Livraison client Ar<input id="localDelivery" type="number" step="1000" min="0" value="0" /></label>
+              <label>Paiement interne<select id="paymentMethod"><option value="direct">Visa directe</option><option value="wallet">Crypto.com / Skrill (+1 %)</option></select></label>
+              <label>Code HS probable<input id="hsCodeManual" type="text" inputmode="numeric" maxlength="10" placeholder="Auto après analyse" /></label>
+            </div>
+            <input id="visaRateManual" type="hidden" />
+            <input id="internalVisaRateManual" type="hidden" />
+            <div class="detail-list">
+              <div class="detail-row"><span>Classification HS</span><strong id="hsCodeMeta">—</strong></div>
+              <div class="detail-row"><span>Catégorie Gemini</span><strong id="hsCategoryMeta">—</strong></div>
+              <div class="detail-row"><span>Contrôle Gemini</span><strong id="hsAiMeta">—</strong></div>
+              <div class="detail-row"><span>Justification</span><strong id="hsReasoningMeta">—</strong></div>
+              <div class="detail-row"><span id="customsDutyLabel">DD officiel</span><strong id="customsDutyRate">—</strong></div>
+              <div class="detail-row"><span>Cours douane USD</span><strong id="customsFxRate">—</strong></div>
+              <div class="detail-row"><span>Dédouanement théorique</span><strong id="customsOfficial">—</strong></div>
+              <div class="detail-row"><span>Objectif négociation eVidy</span><strong id="reserveMeta">—</strong></div>
+              <div class="detail-row"><span>Dédouanement retenu au devis</span><strong id="customsBilled">—</strong></div>
+              <div class="detail-row"><span>Régularisation à l’arrivée</span><strong id="customsAdjustment">À l’arrivée</strong></div>
+              <div class="detail-row"><span>Solde final à encaisser</span><strong id="finalBalanceDue">—</strong></div>
+              <div class="detail-row"><span>Barème marge service</span><strong id="marginTier">—</strong></div>
+              <div class="detail-row"><span>Frais paiement réels</span><strong id="cardFees">—</strong></div>
+              <div class="detail-row"><span>Marge réelle eVidy</span><strong id="realMargin">—</strong></div>
+            </div>
+          </div>
+        </details>
+      </section>
+    </section>
+
+    <section class="view" id="quotesView">
+      <div class="section-eyebrow">Devis clients</div>
+      <section class="card">
+        <div class="card-head"><div><h2>Devis enregistrés</h2><p>Stockés uniquement sur cet appareil</p></div><button class="icon-button" id="newQuoteTop" aria-label="Nouveau devis"><svg class="icon sm"><use href="#i-plus"/></svg></button></div>
+        <div id="quotesContainer"></div>
+      </section>
+    </section>
+  </main>
+
+  <div class="dock-wrap">
+    <nav class="dock" aria-label="Navigation principale">
+      <button class="nav-btn active" data-view="client"><svg class="icon lg"><use href="#i-calculator"/></svg><span>Calcul</span></button>
+      <button class="nav-btn" data-view="internal"><svg class="icon lg"><use href="#i-wallet"/></svg><span>Interne</span></button>
+      <button class="nav-btn" data-view="quotes"><svg class="icon lg"><use href="#i-file"/></svg><span>Devis</span></button>
+    </nav>
+  </div>
+
+  <div class="sheet-backdrop" id="quoteSheet" role="dialog" aria-modal="true" aria-labelledby="quoteSheetTitle">
+    <section class="sheet">
+      <div class="grabber"></div>
+      <div class="sheet-head">
+        <div><h2 id="quoteSheetTitle">Nouveau devis</h2><p id="quoteSheetSub">Compléter le client puis enregistrer ou imprimer</p></div>
+        <button class="close-btn" id="closeQuote" aria-label="Fermer"><svg class="icon sm"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="form-card">
+        <div class="form-grid">
+          <div class="form-field full"><label for="quoteClient">Client</label><input id="quoteClient" type="text" placeholder="Nom du client" autocomplete="name" /></div>
+          <div class="form-field"><label for="quotePhone">Téléphone</label><input id="quotePhone" type="tel" placeholder="Optionnel" autocomplete="tel" /></div>
+          <div class="form-field"><label for="quoteValidity">Valable jusqu'au</label><input id="quoteValidity" type="date" /></div>
+          <div class="form-field full"><label for="quoteNote">Note</label><textarea id="quoteNote" placeholder="Optionnel"></textarea></div>
+        </div>
+      </div>
+      <div class="preview-label">Aperçu</div>
+      <article class="quote-preview" id="quotePreview">
+        <div class="preview-top">
+          <div class="preview-brand"><img src="assets/evidy-mark.svg" alt=""><div><strong>eVidy US</strong><span>Devis d'achat assisté</span></div></div>
+          <div class="preview-ref"><strong id="previewNumber">—</strong><span id="previewDate">—</span></div>
+        </div>
+        <div class="preview-client"><span>Client</span><strong id="previewClient">Client non renseigné</strong></div>
+        <div class="preview-table" id="previewTable"></div>
+        <div class="preview-total"><span>Total estimatif</span><strong id="previewTotal">—</strong></div>
+        <div class="preview-payment-plan">
+          <div><span id="previewDepositLabel">À la commande</span><strong id="previewDeposit">—</strong></div>
+          <div><span id="previewBalanceLabel">À l'arrivée du colis</span><strong id="previewBalance">—</strong></div>
+        </div>
+        <p class="preview-note" id="previewNote">Le prix comprend l'achat, l'acheminement et les frais de service applicables selon l'estimation actuelle du colis.</p>
+      </article>
+      <div class="sheet-actions">
+        <button class="action-btn light" id="copyQuote"><svg class="icon sm"><use href="#i-copy"/></svg>Copier</button>
+        <button class="action-btn dark" id="saveQuote"><svg class="icon sm"><use href="#i-file"/></svg>Enregistrer</button>
+      </div>
+      <div class="sheet-actions" style="padding-top:8px">
+        <button class="action-btn light" id="printQuote"><svg class="icon sm"><use href="#i-print"/></svg>Imprimer / PDF</button>
+        <button class="action-btn light" id="deleteCurrentQuote" style="display:none;color:var(--danger)"><svg class="icon sm"><use href="#i-trash"/></svg>Supprimer</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="printStage" aria-hidden="true"></div>
+  <script>
+    (()=>{
+      const build='20260913-quotehs1';
+      const load=(src)=>new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.body.appendChild(s)});
+      load(`config.js?t=${Date.now()}`).then(()=>load(`assets/app.js?v=${build}`)).catch(error=>console.error('eVidy boot:',error));
+      if ("serviceWorker" in navigator) window.addEventListener("load",()=>navigator.serviceWorker.register(`./sw.js?v=${build}`,{updateViaCache:"none"}).then(r=>r.update()).catch(()=>{}));
+    })();
+  </script>
+</body>
+</html>
