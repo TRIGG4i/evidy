@@ -1,0 +1,37 @@
+{
+  "id": "/evidy/",
+  "name": "eVidy US",
+  "short_name": "eVidy US",
+  "description": "Devis et factures PREST OFFICE pour les achats assistés eVidy US, livrés à Madagascar.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "portrait-primary",
+  "background_color": "#07080b",
+  "theme_color": "#07080b",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "assets/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/app-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
